@@ -1,6 +1,9 @@
+import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:postgres/postgres.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:path_provider/path_provider.dart';
 
 class DatabaseService {
   static final DatabaseService _instance = DatabaseService._internal();
@@ -12,8 +15,8 @@ class DatabaseService {
 
   // Konfigurasi koneksi PostgreSQL ERP
   // Sesuaikan host, port, database name, username, dan password dengan server Anda.
-  final String _host =
-      '10.0.2.2'; // Gunakan 10.0.2.2 untuk Android Emulator ke localhost, atau IP server.
+  // final String _host = '10.0.2.2';
+  final String _host = '192.168.100.43';
   final int _port = 5432;
   final String _databaseName = 'gama_multi_erp';
   final String _username = 'postgres';
@@ -41,15 +44,6 @@ class DatabaseService {
       return _connection!;
     } catch (e) {
       debugPrint('Gagal terhubung ke Database: $e');
-      // Jika DB tidak bisa terhubung, gunakan mock data agar UI tetap berjalan
-      _currentUser = {
-        'id': 1,
-        'name': 'Ahmad Fauzi, S.Kom',
-        'email': 'ahmad.fauzi@gamamulti.co.id',
-        'role': 'Employee',
-        'phone': '',
-        'profile_image': null,
-      };
       rethrow;
     }
   }
@@ -68,7 +62,7 @@ class DatabaseService {
       final conn = await connect();
       final result = await conn.execute(
         Sql.named(
-          'SELECT id, name, email, role, phone, profile_image FROM users WHERE email = @email AND password = @password',
+          'SELECT id, name, email, role, phone, profile_image, profile_image_data FROM users WHERE email = @email AND password = @password',
         ),
         parameters: {'email': email, 'password': password},
       );
@@ -82,22 +76,14 @@ class DatabaseService {
           'role': row[3],
           'phone': row[4]?.toString() ?? '',
           'profile_image': row[5]?.toString(),
+          'profile_image_data': row[6],
         };
         return _currentUser;
       }
       return null;
     } catch (e) {
       debugPrint('Error autentikasi database: $e');
-      // Fallback ke mock user jika DB tidak responsif
-      _currentUser = {
-        'id': 1,
-        'name': 'Ahmad Fauzi, S.Kom',
-        'email': 'ahmad.fauzi@gamamulti.co.id',
-        'role': 'Employee',
-        'phone': '',
-        'profile_image': null,
-      };
-      return _currentUser;
+      rethrow;
     }
   }
 
@@ -183,26 +169,47 @@ class DatabaseService {
     required String phone,
     String? role,
     String? profileImage,
+    Uint8List? profileImageBytes,
   }) async {
     try {
       final conn = await connect();
-      await conn.execute(
-        Sql.named(
-          'UPDATE users SET name = @name, phone = @phone, role = @role, profile_image = @profileImage WHERE id = @userId',
-        ),
-        parameters: {
-          'name': name,
-          'phone': phone,
-          'role': role ?? _currentUser?['role'] ?? 'Employee',
-          'profileImage': profileImage,
-          'userId': userId,
-        },
-      );
+      final effectiveRole = role ?? _currentUser?['role'] ?? 'Employee';
+      if (profileImageBytes != null) {
+        // Save bytes to profile_image_data AND store path in profile_image
+        await conn.execute(
+          Sql.named(
+            'UPDATE users SET name = @name, phone = @phone, role = @role, profile_image_data = @profileImageData, profile_image = @profileImage WHERE id = @userId',
+          ),
+          parameters: {
+            'name': name,
+            'phone': phone,
+            'role': effectiveRole,
+            'profileImageData': profileImageBytes,
+            'profileImage': profileImage,
+            'userId': userId,
+          },
+        );
+      } else {
+        // Only path provided, clear old bytes so UI uses the path
+        await conn.execute(
+          Sql.named(
+            'UPDATE users SET name = @name, phone = @phone, role = @role, profile_image = @profileImage, profile_image_data = NULL WHERE id = @userId',
+          ),
+          parameters: {
+            'name': name,
+            'phone': phone,
+            'role': effectiveRole,
+            'profileImage': profileImage,
+            'userId': userId,
+          },
+        );
+      }
       if (_currentUser != null && _currentUser!['id'] == userId) {
         _currentUser!['name'] = name;
         _currentUser!['phone'] = phone;
-        if (role != null) _currentUser!['role'] = role;
-        if (profileImage != null) _currentUser!['profile_image'] = profileImage;
+        _currentUser!['role'] = effectiveRole;
+        _currentUser!['profile_image'] = profileImage;
+        _currentUser!['profile_image_data'] = profileImageBytes;
       }
       await saveUserSession(_currentUser ?? {});
       return true;
@@ -371,7 +378,7 @@ class DatabaseService {
       final conn = await connect();
       final result = await conn.execute(
         Sql.named(
-          '''SELECT id, leave_type, start_date, end_date, reason, attachment_path, has_attachment, created_at
+          '''SELECT id, leave_type, start_date, end_date, reason, attachment_path, attachment_name, attachment_mime, attachment_data, has_attachment, created_at
              FROM sick_leaves WHERE user_id = @userId ORDER BY start_date DESC''',
         ),
         parameters: {'userId': userId},
@@ -386,8 +393,11 @@ class DatabaseService {
           'end_date': _formatDate(row[3]),
           'reason': row[4],
           'attachment_path': row[5],
-          'has_attachment': row[6] ?? false,
-          'created_at': row[7] != null ? _formatDate(row[7]) : null,
+          'attachment_name': row[6],
+          'attachment_mime': row[7],
+          'attachment_data': row[8],
+          'has_attachment': row[9] ?? false,
+          'created_at': row[10] != null ? _formatDate(row[10]) : null,
         });
       }
       return leaves;
@@ -523,14 +533,19 @@ class DatabaseService {
     required String endDate,
     required String reason,
     String? attachmentPath,
+    Uint8List? attachmentBytes,
+    String? attachmentName,
+    String? attachmentMime,
   }) async {
     try {
       final conn = await connect();
-      final hasAttachment = attachmentPath != null && attachmentPath.isNotEmpty;
+      final hasAttachment =
+          (attachmentBytes != null && attachmentBytes.isNotEmpty) ||
+          (attachmentPath != null && attachmentPath.isNotEmpty);
       await conn.execute(
         Sql.named(
-          '''INSERT INTO sick_leaves (user_id, leave_type, start_date, end_date, reason, attachment_path, has_attachment)
-             VALUES (@userId, @leaveType, @startDate, @endDate, @reason, @attachmentPath, @hasAttachment)''',
+          '''INSERT INTO sick_leaves (user_id, leave_type, start_date, end_date, reason, attachment_path, attachment_name, attachment_mime, attachment_data, has_attachment)
+             VALUES (@userId, @leaveType, @startDate, @endDate, @reason, @attachmentPath, @attachmentName, @attachmentMime, @attachmentData, @hasAttachment)''',
         ),
         parameters: {
           'userId': userId,
@@ -539,6 +554,9 @@ class DatabaseService {
           'endDate': endDate,
           'reason': reason,
           'attachmentPath': attachmentPath,
+          'attachmentName': attachmentName,
+          'attachmentMime': attachmentMime,
+          'attachmentData': attachmentBytes,
           'hasAttachment': hasAttachment,
         },
       );
@@ -546,6 +564,58 @@ class DatabaseService {
     } catch (e) {
       debugPrint('Error simpan izin/sakit dengan lampiran: $e');
       return false;
+    }
+  }
+
+  // Ambil data lampiran dari DB (based on leave id) dan tulis ke file temporary
+  Future<String?> getAttachmentFile({
+    required int leaveId,
+    required String suggestedName,
+  }) async {
+    try {
+      final conn = await connect();
+      final res = await conn.execute(
+        Sql.named(
+          'SELECT attachment_data, attachment_mime FROM sick_leaves WHERE id = @id AND attachment_data IS NOT NULL',
+        ),
+        parameters: {'id': leaveId},
+      );
+      if (res.isEmpty) return null;
+      final data = res.first[0];
+      if (data == null) return null;
+      // data may be Uint8List or List<int>
+      final bytes = Uint8List.fromList(List<int>.from(data as List));
+      final tmp = await getTemporaryDirectory();
+      // Determine extension from MIME if possible, else fallback to suggestedName's extension
+      String ext = '';
+      final mime = res.first[1] as String?;
+      if (mime != null) {
+        if (mime == 'application/pdf') {
+          ext = 'pdf';
+        } else if (mime.startsWith('image/')) {
+          ext = mime.split('/').last;
+        } else if (mime == 'application/msword') {
+          ext = 'doc';
+        } else if (mime ==
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+          ext = 'docx';
+        }
+      }
+      if (ext.isEmpty) {
+        // fallback to extension from suggestedName
+        final idx = suggestedName.lastIndexOf('.');
+        if (idx != -1 && idx < suggestedName.length - 1) {
+          ext = suggestedName.substring(idx + 1).toLowerCase();
+        } else {
+          ext = 'bin';
+        }
+      }
+      final f = File('${tmp.path}/lampiran_$leaveId.$ext');
+      await f.writeAsBytes(bytes);
+      return f.path;
+    } catch (e) {
+      debugPrint('Error ambil lampiran: $e');
+      return null;
     }
   }
 }

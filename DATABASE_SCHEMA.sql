@@ -60,7 +60,10 @@ CREATE TABLE IF NOT EXISTS sick_leaves (
     start_date DATE NOT NULL,
     end_date DATE NOT NULL,
     reason TEXT,
-    attachment_path TEXT, -- Path file lampiran surat dokter
+    attachment_path TEXT, -- Path file lampiran surat dokter (legacy/local)
+    attachment_name TEXT, -- Nama file lampiran
+    attachment_mime TEXT, -- MIME type lampiran
+    attachment_data BYTEA, -- Isi file lampiran (disimpan di DB)
     has_attachment BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
@@ -111,11 +114,28 @@ CREATE INDEX idx_announcements_active ON announcements (is_active);
 -- Tambah kolom profile_image jika belum ada
 ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_image TEXT;
 
+-- Tambah kolom profile_image_data jika belum ada (foto profil di DB)
+ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_image_data BYTEA;
+
 -- Tambah kolom phone jika belum ada
 ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(20);
 
 -- Tambah kolom department jika belum ada
 ALTER TABLE users ADD COLUMN IF NOT EXISTS department VARCHAR(100);
+
+-- Tambah kolom lampiran di sick_leaves jika belum ada
+ALTER TABLE sick_leaves
+ADD COLUMN IF NOT EXISTS attachment_name TEXT;
+
+ALTER TABLE sick_leaves
+ADD COLUMN IF NOT EXISTS attachment_mime TEXT;
+
+ALTER TABLE sick_leaves
+ADD COLUMN IF NOT EXISTS attachment_data BYTEA;
+
+-- Flag ada lampiran
+ALTER TABLE sick_leaves
+ADD COLUMN IF NOT EXISTS has_attachment BOOLEAN DEFAULT FALSE;
 
 -- Update role default
 ALTER TABLE users ALTER COLUMN role SET DEFAULT 'Employee';

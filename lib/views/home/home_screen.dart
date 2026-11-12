@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../theme/app_theme.dart';
@@ -64,9 +65,11 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final currentUser = DatabaseService().getCurrentUser();
-    final String userName = currentUser?['name'] ?? 'Ahmad Fauzi, S.Kom';
-    final String userRole = currentUser?['role'] ?? 'Software Engineer';
+    final String userName = currentUser?['name'] ?? 'Karyawan';
+    final String userRole = currentUser?['role'] ?? 'Staff';
     final String? profileImgPath = currentUser?['profile_image']?.toString();
+    final Uint8List? profileImgBytes =
+        currentUser?['profile_image_data'] as Uint8List?;
     final File? profileFile =
         (profileImgPath != null &&
             profileImgPath.isNotEmpty &&
@@ -134,8 +137,12 @@ class _HomeScreenState extends State<HomeScreen> {
                                   backgroundColor: Colors.white,
                                   backgroundImage: profileFile != null
                                       ? FileImage(profileFile)
-                                      : null,
-                                  child: profileFile == null
+                                      : (profileImgBytes != null
+                                            ? MemoryImage(profileImgBytes)
+                                            : null),
+                                  child:
+                                      (profileFile == null &&
+                                          profileImgBytes == null)
                                       ? Text(
                                           initial,
                                           style: const TextStyle(

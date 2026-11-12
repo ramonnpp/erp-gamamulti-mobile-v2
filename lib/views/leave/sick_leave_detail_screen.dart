@@ -1,9 +1,12 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:open_filex/open_filex.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:path_provider/path_provider.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/custom_snackbar.dart';
+import '../../services/database_service.dart';
 
 class SickLeaveDetailScreen extends StatelessWidget {
   final Map<String, dynamic> leave;
@@ -32,19 +35,74 @@ class SickLeaveDetailScreen extends StatelessWidget {
   String _fileName(String path) => path.split(Platform.pathSeparator).last;
   String _ext(String path) =>
       path.contains('.') ? path.split('.').last.toLowerCase() : '';
-  bool get _isImage => [
-    'jpg',
-    'jpeg',
-    'png',
-    'webp',
-    'gif',
-  ].contains(_ext(leave['attachment_path']?.toString() ?? ''));
-  bool get _isPdf => _ext(leave['attachment_path']?.toString() ?? '') == 'pdf';
+
+  // Nama file lampiran (dari DB, fallback ke path lokal)
+  String get _attachmentName {
+    final fromDb = leave['attachment_name']?.toString();
+    if (fromDb != null && fromDb.isNotEmpty) return fromDb;
+    final p = leave['attachment_path']?.toString();
+    if (p != null && p.isNotEmpty) return _fileName(p);
+    return 'Lampiran';
+  }
+
+  String? get _attachmentMime {
+    final m = leave['attachment_mime']?.toString();
+    return (m != null && m.isNotEmpty) ? m : null;
+  }
+
+  List<int>? get _attachmentBytes {
+    final data = leave['attachment_data'];
+    if (data != null && data is List) return List<int>.from(data);
+    return null;
+  }
+
+  int get _attachmentSize {
+    final b = _attachmentBytes;
+    if (b == null) return 0;
+    return b.length;
+  }
+
+  String _formatSize(int bytes) {
+    if (bytes <= 0) return '-';
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+  }
+
+  // Ekstensi: MIME dulu, lalu nama file, lalu path lokal
+  String get _resolvedExt {
+    final mime = _attachmentMime;
+    if (mime != null) {
+      if (mime == 'application/pdf') return 'pdf';
+      if (mime.startsWith('image/')) return mime.split('/').last;
+      if (mime == 'application/msword') return 'doc';
+      if (mime ==
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+        return 'docx';
+      }
+    }
+    final e = _ext(_attachmentName);
+    if (e.isNotEmpty) return e;
+    final p = _ext(leave['attachment_path']?.toString() ?? '');
+    if (p.isNotEmpty) return p;
+    return 'bin';
+  }
+
+  bool get _isImage =>
+      ['jpg', 'jpeg', 'png', 'webp', 'gif'].contains(_resolvedExt);
+  bool get _isPdf => _resolvedExt == 'pdf';
+  bool get _hasAttachmentData =>
+      leave['has_attachment'] == true &&
+          (leave['attachment_path'] != null &&
+              leave['attachment_path'].toString().isNotEmpty) ||
+      (leave['attachment_data'] != null &&
+          leave['attachment_data'] is List &&
+          (leave['attachment_data'] as List).isNotEmpty);
 
   IconData get _fileIcon {
     if (_isImage) return Icons.image_outlined;
     if (_isPdf) return Icons.picture_as_pdf_outlined;
-    final e = _ext(leave['attachment_path']?.toString() ?? '');
+    final e = _resolvedExt;
     if (e == 'doc' || e == 'docx') return Icons.description_outlined;
     return Icons.attach_file;
   }
@@ -57,22 +115,74 @@ class SickLeaveDetailScreen extends StatelessWidget {
 
   Future<void> _openFile(BuildContext context) async {
     final path = leave['attachment_path']?.toString();
-    if (path == null || path.isEmpty) return;
-    final file = File(path);
-    if (!await file.exists()) {
+    final leaveId = leave['id'] as int?;
+    final attachmentData = leave['attachment_data'];
+
+    String? filePath = path;
+    if (path == null || path.isEmpty || !await File(path).exists()) {
+      if (leaveId != null) {
+        // Coba ambil dari DB (bytes)
+        final fetchedPath = await DatabaseService().getAttachmentFile(
+          leaveId: leaveId,
+          suggestedName: 'lampiran_$leaveId.pdf',
+        );
+        if (fetchedPath != null) {
+          filePath = fetchedPath;
+        }
+      }
+    }
+
+    if (filePath == null || !await File(filePath).exists()) {
+      // Jika tidak ada file di storage, coba render bytes langsung di UI (untuk gambar)
+      if (attachmentData != null &&
+          attachmentData is List &&
+          attachmentData.isNotEmpty) {
+        // Bytes tersedia, simpan ke temporary file untuk dibagikan/ditampilkan
+        final bytes = Uint8List.fromList(List<int>.from(attachmentData));
+        final tmp = await getTemporaryDirectory();
+        String ext = _ext(leave['attachment_path']?.toString() ?? '');
+        if (ext.isEmpty) {
+          // Coba tebak dari MIME type jika ada
+          final mime = leave['attachment_mime']?.toString();
+          if (mime != null) {
+            if (mime == 'application/pdf') {
+              ext = 'pdf';
+            } else if (mime.startsWith('image/')) {
+              ext = mime.split('/').last;
+            } else if (mime == 'application/msword') {
+              ext = 'doc';
+            } else if (mime ==
+                'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+              ext = 'docx';
+            } else {
+              ext = 'bin';
+            }
+          } else {
+            ext = 'bin';
+          }
+        }
+        filePath = '${tmp.path}/lampiran_$leaveId.$ext';
+        final f = File(filePath);
+        await f.writeAsBytes(bytes);
+      } else {
+        if (context.mounted) {
+          CustomSnackbar.error(context, 'File tidak ditemukan');
+        }
+        return;
+      }
+    }
+
+    if (!await File(filePath).exists()) {
       if (context.mounted) {
-        CustomSnackbar.error(context, 'File tidak ditemukan di perangkat ini');
+        CustomSnackbar.error(context, 'File tidak ditemukan');
       }
       return;
     }
+
     try {
-      final result = await OpenFilex.open(path);
-      if (result.type == ResultType.error && context.mounted) {
-        CustomSnackbar.error(
-          context,
-          'Tidak dapat membuka file: ${result.message}',
-        );
-      }
+      await SharePlus.instance.share(
+        ShareParams(files: [XFile(filePath)], text: _fileName(filePath)),
+      );
     } catch (e) {
       if (context.mounted) {
         CustomSnackbar.error(context, 'Gagal membuka file: $e');
@@ -80,9 +190,67 @@ class SickLeaveDetailScreen extends StatelessWidget {
     }
   }
 
-  void _showFullscreenImage(BuildContext context) {
+  void _showFullscreenImage(BuildContext context) async {
     final path = leave['attachment_path']?.toString();
-    if (path == null) return;
+    final leaveId = leave['id'] as int?;
+    final attachmentData = leave['attachment_data'];
+
+    String? filePath = path;
+    if (path == null || path.isEmpty || !await File(path).exists()) {
+      if (leaveId != null) {
+        // Coba ambil dari DB (bytes)
+        final fetchedPath = await DatabaseService().getAttachmentFile(
+          leaveId: leaveId,
+          suggestedName: 'lampiran_$leaveId.jpg',
+        );
+        if (fetchedPath != null) {
+          filePath = fetchedPath;
+        }
+      }
+    }
+
+    // Jika tidak ada file di storage, coba render bytes langsung di UI (untuk gambar)
+    if (filePath == null &&
+        attachmentData != null &&
+        attachmentData is List &&
+        attachmentData.isNotEmpty) {
+      // Bytes tersedia, simpan ke temporary file untuk ditampilkan
+      final bytes = Uint8List.fromList(List<int>.from(attachmentData));
+      final tmp = await getTemporaryDirectory();
+      String ext = _ext(leave['attachment_path']?.toString() ?? '');
+      if (ext.isEmpty) {
+        // Coba tebak dari MIME type jika ada
+        final mime = leave['attachment_mime']?.toString();
+        if (mime != null) {
+          if (mime == 'application/pdf') {
+            ext = 'pdf';
+          } else if (mime.startsWith('image/')) {
+            ext = mime.split('/').last;
+          } else if (mime == 'application/msword') {
+            ext = 'doc';
+          } else if (mime ==
+              'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+            ext = 'docx';
+          } else {
+            ext = 'bin';
+          }
+        } else {
+          ext = 'bin';
+        }
+      }
+      filePath = '${tmp.path}/lampiran_$leaveId.$ext';
+      final f = File(filePath);
+      await f.writeAsBytes(bytes);
+    }
+
+    if (filePath == null || !await File(filePath).exists()) {
+      if (context.mounted) {
+        CustomSnackbar.error(context, 'Gambar tidak ditemukan');
+      }
+      return;
+    }
+
+    if (!context.mounted) return;
     showDialog(
       context: context,
       builder: (_) => Dialog(
@@ -92,7 +260,7 @@ class SickLeaveDetailScreen extends StatelessWidget {
           children: [
             Center(
               child: InteractiveViewer(
-                child: Image.file(File(path), fit: BoxFit.contain),
+                child: Image.file(File(filePath!), fit: BoxFit.contain),
               ),
             ),
             Positioned(
@@ -111,10 +279,7 @@ class SickLeaveDetailScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final hasAttachment =
-        leave['has_attachment'] == true &&
-        leave['attachment_path'] != null &&
-        leave['attachment_path'].toString().isNotEmpty;
+    final hasAttachment = _hasAttachmentData;
     final path = leave['attachment_path']?.toString() ?? '';
     final fileExists = hasAttachment && File(path).existsSync();
     final days = _durationDays();
@@ -260,21 +425,59 @@ class SickLeaveDetailScreen extends StatelessWidget {
                       ? Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            if (_isImage && fileExists) ...[
+                            if (_isImage) ...[
                               GestureDetector(
                                 onTap: () => _showFullscreenImage(context),
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(16),
-                                  child: Image.file(
-                                    File(path),
-                                    height: 240,
-                                    width: double.infinity,
-                                    fit: BoxFit.cover,
+                                child: Container(
+                                  clipBehavior: Clip.antiAlias,
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(16),
+                                    border: Border.all(
+                                      color: const Color(0xFFE2E8F0),
+                                    ),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black.withValues(
+                                          alpha: 0.04,
+                                        ),
+                                        blurRadius: 10,
+                                        offset: const Offset(0, 4),
+                                      ),
+                                    ],
                                   ),
+                                  child: fileExists
+                                      ? Image.file(
+                                          File(path),
+                                          height: 220,
+                                          width: double.infinity,
+                                          fit: BoxFit.cover,
+                                        )
+                                      : (_attachmentBytes != null
+                                            ? Image.memory(
+                                                Uint8List.fromList(
+                                                  _attachmentBytes!,
+                                                ),
+                                                height: 220,
+                                                width: double.infinity,
+                                                fit: BoxFit.cover,
+                                              )
+                                            : Container(
+                                                height: 140,
+                                                color: const Color(0xFFF1F5F9),
+                                                child: const Center(
+                                                  child: Icon(
+                                                    Icons.image_outlined,
+                                                    size: 48,
+                                                    color:
+                                                        AppTheme.textSecondary,
+                                                  ),
+                                                ),
+                                              )),
                                 ),
                               ),
                               const SizedBox(height: 8),
                               const Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
                                   Icon(
                                     Icons.zoom_in_rounded,
@@ -297,7 +500,7 @@ class SickLeaveDetailScreen extends StatelessWidget {
                               padding: const EdgeInsets.all(14),
                               decoration: BoxDecoration(
                                 color: const Color(0xFFF8FAFC),
-                                borderRadius: BorderRadius.circular(14),
+                                borderRadius: BorderRadius.circular(16),
                                 border: Border.all(
                                   color: const Color(0xFFE2E8F0),
                                 ),
@@ -308,39 +511,84 @@ class SickLeaveDetailScreen extends StatelessWidget {
                                     padding: const EdgeInsets.all(12),
                                     decoration: BoxDecoration(
                                       color: _fileColor.withValues(alpha: 0.1),
-                                      borderRadius: BorderRadius.circular(12),
+                                      borderRadius: BorderRadius.circular(14),
                                     ),
                                     child: Icon(
                                       _fileIcon,
                                       color: _fileColor,
-                                      size: 24,
+                                      size: 26,
                                     ),
                                   ),
-                                  const SizedBox(width: 12),
+                                  const SizedBox(width: 14),
                                   Expanded(
                                     child: Column(
                                       crossAxisAlignment:
                                           CrossAxisAlignment.start,
                                       children: [
                                         Text(
-                                          _fileName(path),
+                                          _attachmentName,
                                           style: const TextStyle(
                                             fontSize: 13,
-                                            fontWeight: FontWeight.w600,
+                                            fontWeight: FontWeight.bold,
                                             color: AppTheme.textPrimary,
                                           ),
                                           maxLines: 2,
                                           overflow: TextOverflow.ellipsis,
                                         ),
-                                        const SizedBox(height: 2),
-                                        Text(
-                                          fileExists
-                                              ? 'File tersedia di perangkat'
-                                              : 'File tidak ditemukan di perangkat ini',
-                                          style: const TextStyle(
-                                            fontSize: 11,
-                                            color: AppTheme.textSecondary,
-                                          ),
+                                        const SizedBox(height: 4),
+                                        Wrap(
+                                          spacing: 6,
+                                          runSpacing: 4,
+                                          children: [
+                                            Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 6,
+                                                    vertical: 2,
+                                                  ),
+                                              decoration: BoxDecoration(
+                                                color: _fileColor.withValues(
+                                                  alpha: 0.1,
+                                                ),
+                                                borderRadius:
+                                                    BorderRadius.circular(6),
+                                              ),
+                                              child: Text(
+                                                _resolvedExt.toUpperCase(),
+                                                style: TextStyle(
+                                                  fontSize: 10,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: _fileColor,
+                                                ),
+                                              ),
+                                            ),
+                                            if (_attachmentSize > 0)
+                                              Text(
+                                                _formatSize(_attachmentSize),
+                                                style: const TextStyle(
+                                                  fontSize: 11,
+                                                  color: AppTheme.textSecondary,
+                                                ),
+                                              ),
+                                            const Text(
+                                              '•',
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                color: AppTheme.textSecondary,
+                                              ),
+                                            ),
+                                            Text(
+                                              _attachmentBytes != null
+                                                  ? 'Tersimpan di Cloud/DB'
+                                                  : (fileExists
+                                                        ? 'Tersimpan di Perangkat'
+                                                        : 'File tidak lokal'),
+                                              style: const TextStyle(
+                                                fontSize: 11,
+                                                color: AppTheme.textSecondary,
+                                              ),
+                                            ),
+                                          ],
                                         ),
                                       ],
                                     ),
@@ -352,15 +600,17 @@ class SickLeaveDetailScreen extends StatelessWidget {
                             SizedBox(
                               width: double.infinity,
                               child: ElevatedButton.icon(
-                                onPressed: fileExists
-                                    ? () => _openFile(context)
-                                    : null,
+                                onPressed: () => _openFile(context),
                                 icon: const Icon(
                                   Icons.open_in_new_rounded,
                                   size: 18,
                                 ),
                                 label: Text(
-                                  _isPdf ? 'Buka PDF' : 'Buka Lampiran',
+                                  _isPdf
+                                      ? 'Buka Dokumen PDF'
+                                      : (_isImage
+                                            ? 'Buka / Bagikan Gambar'
+                                            : 'Buka / Bagikan Lampiran'),
                                 ),
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: AppTheme.primaryColor,
@@ -377,22 +627,32 @@ class SickLeaveDetailScreen extends StatelessWidget {
                             ),
                           ],
                         )
-                      : const Row(
-                          children: [
-                            Icon(
-                              Icons.info_outline_rounded,
-                              color: AppTheme.textSecondary,
-                              size: 18,
-                            ),
-                            SizedBox(width: 8),
-                            Text(
-                              'Tidak ada lampiran untuk pengajuan ini.',
-                              style: TextStyle(
-                                fontSize: 13,
+                      : Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF8FAFC),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: const Color(0xFFE2E8F0)),
+                          ),
+                          child: const Row(
+                            children: [
+                              Icon(
+                                Icons.info_outline_rounded,
                                 color: AppTheme.textSecondary,
+                                size: 20,
                               ),
-                            ),
-                          ],
+                              SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  'Tidak ada lampiran surat dokter untuk pengajuan ini.',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: AppTheme.textSecondary,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                 ),
               ]),

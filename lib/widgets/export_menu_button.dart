@@ -70,8 +70,9 @@ class ExportMenuButton extends StatelessWidget {
               icon: Icons.table_chart_rounded,
               color: const Color(0xFF10B981),
               onTap: () {
-                Navigator.pop(context);
-                onCsv(context);
+                final ctx = context;
+                Navigator.pop(ctx);
+                onCsv(ctx);
               },
             ),
             const SizedBox(height: 12),
@@ -82,8 +83,9 @@ class ExportMenuButton extends StatelessWidget {
               icon: Icons.picture_as_pdf_rounded,
               color: const Color(0xFFEF4444),
               onTap: () {
-                Navigator.pop(context);
-                onPdf(context);
+                final ctx = context;
+                Navigator.pop(ctx);
+                onPdf(ctx);
               },
             ),
             const SizedBox(height: 16),
@@ -176,4 +178,3 @@ class ExportMenuButton extends StatelessWidget {
     );
   }
 }
-

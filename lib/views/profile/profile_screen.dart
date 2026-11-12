@@ -1,6 +1,8 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
 import '../../theme/app_theme.dart';
 import '../../services/database_service.dart';
 import '../../widgets/custom_snackbar.dart';
@@ -33,8 +35,23 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _phoneController.text = currentUser?['phone'] ?? '';
     _roleController.text = currentUser?['role'] ?? 'Employee';
     final img = currentUser?['profile_image']?.toString();
+    final imgBytes = currentUser?['profile_image_data'] as Uint8List?;
     if (img != null && img.isNotEmpty && File(img).existsSync()) {
       _image = File(img);
+    } else if (imgBytes != null && imgBytes.isNotEmpty) {
+      _writeProfileImage(imgBytes, currentUser?['id']);
+    }
+  }
+
+  Future<void> _writeProfileImage(Uint8List bytes, int? userId) async {
+    final tmp = await getTemporaryDirectory();
+    final path = '${tmp.path}/profile_$userId.png';
+    final f = File(path);
+    await f.writeAsBytes(bytes);
+    if (mounted) {
+      setState(() {
+        _image = f;
+      });
     }
   }
 
@@ -90,12 +107,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final userId = currentUser?['id'];
     bool ok = true;
     if (userId is int) {
+      Uint8List? profileBytes;
+      if (_image != null) {
+        profileBytes = await _image!.readAsBytes();
+      }
       ok = await DatabaseService().updateUser(
         userId: userId,
         name: _nameController.text.trim(),
         phone: _phoneController.text.trim(),
         role: _roleController.text.trim(),
         profileImage: _image?.path ?? currentUser?['profile_image']?.toString(),
+        profileImageBytes: profileBytes,
       );
     }
     if (!mounted) return;

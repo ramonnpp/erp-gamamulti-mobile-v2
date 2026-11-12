@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
@@ -21,6 +22,7 @@ class _SickLeaveFormDialogState extends State<SickLeaveFormDialog> {
   String _duration = '1 Hari';
   bool _isSubmitting = false;
   String? _attachmentPath;
+  Uint8List? _attachmentBytes;
   String _attachmentType = 'none';
 
   String? _errorDate;
@@ -33,12 +35,37 @@ class _SickLeaveFormDialogState extends State<SickLeaveFormDialog> {
       final dest = File('${dir.path}${Platform.pathSeparator}$fileName');
       if (sourcePath != dest.path) {
         await File(sourcePath).copy(dest.path);
-        return dest.path;
       }
-      return sourcePath;
+      // Baca bytes untuk disimpan ke DB
+      _attachmentBytes = await dest.readAsBytes();
+      return dest.path;
     } catch (e) {
       debugPrint('Copy attachment failed: $e');
+      _attachmentBytes = null;
       return sourcePath;
+    }
+  }
+
+  String _attachmentMime(String? path) {
+    final ext = path?.split('.').last.toLowerCase() ?? '';
+    switch (ext) {
+      case 'pdf':
+        return 'application/pdf';
+      case 'jpg':
+      case 'jpeg':
+        return 'image/jpeg';
+      case 'png':
+        return 'image/png';
+      case 'gif':
+        return 'image/gif';
+      case 'webp':
+        return 'image/webp';
+      case 'doc':
+        return 'application/msword';
+      case 'docx':
+        return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      default:
+        return 'application/octet-stream';
     }
   }
 
@@ -119,10 +146,18 @@ class _SickLeaveFormDialogState extends State<SickLeaveFormDialog> {
                   onPressed: () => Navigator.pop(ctx, false),
                   style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
                     side: const BorderSide(color: Color(0xFFE2E8F0)),
                   ),
-                  child: const Text('Tidak', style: TextStyle(color: AppTheme.textSecondary, fontWeight: FontWeight.w600)),
+                  child: const Text(
+                    'Tidak',
+                    style: TextStyle(
+                      color: AppTheme.textSecondary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
               ),
               const SizedBox(width: 12),
@@ -131,11 +166,19 @@ class _SickLeaveFormDialogState extends State<SickLeaveFormDialog> {
                   onPressed: () => Navigator.pop(ctx, true),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppTheme.primaryColor,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     elevation: 0,
                   ),
-                  child: const Text('Ya, Kirim', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                  child: const Text(
+                    'Ya, Kirim',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ),
               ),
             ],
@@ -199,6 +242,36 @@ class _SickLeaveFormDialogState extends State<SickLeaveFormDialog> {
     int days = int.tryParse(_duration.split(' ')[0]) ?? 1;
     DateTime endDate = _date!.add(Duration(days: days - 1));
 
+    final bool hasAttachment = _attachmentType != 'none';
+    final String? pathToSubmit = hasAttachment ? _attachmentPath : null;
+
+    // Pastikan bytes lampiran selalu terisi sebelum kirim ke DB.
+    Uint8List? bytesToSubmit = hasAttachment ? _attachmentBytes : null;
+    if (hasAttachment &&
+        (bytesToSubmit == null || bytesToSubmit.isEmpty) &&
+        pathToSubmit != null) {
+      try {
+        final f = File(pathToSubmit);
+        if (await f.exists()) {
+          bytesToSubmit = await f.readAsBytes();
+          _attachmentBytes = bytesToSubmit;
+        }
+      } catch (e) {
+        debugPrint('Gagal baca bytes lampiran: $e');
+      }
+    }
+
+    if (hasAttachment && (bytesToSubmit == null || bytesToSubmit.isEmpty)) {
+      setState(() => _isSubmitting = false);
+      if (mounted) {
+        CustomSnackbar.error(
+          context,
+          'Lampiran gagal dibaca. Silakan pilih ulang file.',
+        );
+      }
+      return;
+    }
+
     final success = await DatabaseService()
         .submitSickLeaveRequestWithAttachment(
           userId: user['id'],
@@ -206,7 +279,12 @@ class _SickLeaveFormDialogState extends State<SickLeaveFormDialog> {
           startDate: _date.toString().split(' ')[0],
           endDate: endDate.toString().split(' ')[0],
           reason: _reasonController.text.trim(),
-          attachmentPath: _attachmentType == 'none' ? null : _attachmentPath,
+          attachmentPath: pathToSubmit,
+          attachmentBytes: bytesToSubmit,
+          attachmentName: pathToSubmit != null
+              ? File(pathToSubmit).uri.pathSegments.last
+              : null,
+          attachmentMime: _attachmentMime(pathToSubmit),
         );
 
     setState(() => _isSubmitting = false);

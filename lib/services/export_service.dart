@@ -14,30 +14,33 @@ class ExportService {
     return '"$s"';
   }
 
-  static Future<void> _saveAndShare(
+  static Future<void> _saveToDownloads(
     BuildContext context,
     Uint8List bytes,
     String filename,
     String mimeType,
   ) async {
     try {
-      final dir = await getTemporaryDirectory();
+      final dir = await getDownloadsDirectory();
+      if (dir == null) {
+        if (context.mounted) {
+          CustomSnackbar.error(context, 'Folder Download tidak tersedia');
+        }
+        return;
+      }
       final file = File('${dir.path}/$filename');
       await file.writeAsBytes(bytes);
 
-      final box = context.findRenderObject() as RenderBox?;
-
+      if (!context.mounted) return;
+      CustomSnackbar.success(context, 'Tersimpan: ${file.path}');
+      // Buka via share sheet agar user pilih app (hindari freeze open_filex)
       await SharePlus.instance.share(
-        ShareParams(
-          files: [XFile(file.path, mimeType: mimeType)],
-          text: filename,
-          sharePositionOrigin: box != null
-              ? box.localToGlobal(Offset.zero) & box.size
-              : null,
-        ),
+        ShareParams(files: [XFile(file.path)], text: filename),
       );
     } catch (e) {
-      CustomSnackbar.error(context, 'Gagal export: $e');
+      if (context.mounted) {
+        CustomSnackbar.error(context, 'Gagal export: $e');
+      }
     }
   }
 
@@ -65,7 +68,7 @@ class ExportService {
         ].join(','),
       );
     }
-    await _saveAndShare(
+    await _saveToDownloads(
       context,
       Uint8List.fromList(utf8.encode(sb.toString())),
       'history_presensi.csv',
@@ -125,14 +128,18 @@ class ExportService {
           ),
         ),
       );
-      await _saveAndShare(
+      final bytes = await doc.save();
+      if (!context.mounted) return;
+      await _saveToDownloads(
         context,
-        await doc.save(),
+        bytes,
         'history_presensi.pdf',
         'application/pdf',
       );
     } catch (e) {
-      CustomSnackbar.error(context, 'Gagal membuat PDF: $e');
+      if (context.mounted) {
+        CustomSnackbar.error(context, 'Gagal membuat PDF: $e');
+      }
     }
   }
 
@@ -159,7 +166,7 @@ class ExportService {
         ].join(','),
       );
     }
-    await _saveAndShare(
+    await _saveToDownloads(
       context,
       Uint8List.fromList(utf8.encode(sb.toString())),
       'riwayat_izin_sakit.csv',
@@ -217,14 +224,18 @@ class ExportService {
           ),
         ),
       );
-      await _saveAndShare(
+      final bytes = await doc.save();
+      if (!context.mounted) return;
+      await _saveToDownloads(
         context,
-        await doc.save(),
+        bytes,
         'riwayat_izin_sakit.pdf',
         'application/pdf',
       );
     } catch (e) {
-      CustomSnackbar.error(context, 'Gagal membuat PDF: $e');
+      if (context.mounted) {
+        CustomSnackbar.error(context, 'Gagal membuat PDF: $e');
+      }
     }
   }
 
@@ -252,7 +263,7 @@ class ExportService {
         ].join(','),
       );
     }
-    await _saveAndShare(
+    await _saveToDownloads(
       context,
       Uint8List.fromList(utf8.encode(sb.toString())),
       'riwayat_cuti.csv',
@@ -311,16 +322,18 @@ class ExportService {
           ),
         ),
       );
-      await _saveAndShare(
+      final bytes = await doc.save();
+      if (!context.mounted) return;
+      await _saveToDownloads(
         context,
-        await doc.save(),
+        bytes,
         'riwayat_cuti.pdf',
         'application/pdf',
       );
     } catch (e) {
-      CustomSnackbar.error(context, 'Gagal membuat PDF: $e');
+      if (context.mounted) {
+        CustomSnackbar.error(context, 'Gagal membuat PDF: $e');
+      }
     }
   }
 }
-
-

@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import '../../theme/app_theme.dart';
 import '../../services/database_service.dart';
-import '../../widgets/custom_snackbar.dart';
 import '../navigation/main_navigation.dart';
 import 'register_screen.dart';
+import 'connection_failed_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -40,29 +40,21 @@ class _LoginScreenState extends State<LoginScreen> {
             MaterialPageRoute(builder: (context) => const MainNavigation()),
           );
         } else {
-          final demoUser = {
-            'id': 1,
-            'name': 'Ahmad Fauzi',
-            'email': _emailController.text,
-            'role': 'Software Engineer',
-          };
-          await DatabaseService().saveUserSession(demoUser);
           if (!mounted) return;
-          CustomSnackbar.warning(
-            context,
-            'Koneksi DB gagal / User tidak ditemukan. Masuk dalam Mode Demo.',
-          );
           Navigator.pushReplacement(
             context,
-            MaterialPageRoute(builder: (context) => const MainNavigation()),
+            MaterialPageRoute(
+              builder: (context) => const ConnectionFailedScreen(),
+            ),
           );
         }
       } catch (e) {
         if (!mounted) return;
-        CustomSnackbar.error(context, 'Error DB: $e. Masuk dengan Mode Demo.');
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (context) => const MainNavigation()),
+          MaterialPageRoute(
+            builder: (context) => const ConnectionFailedScreen(),
+          ),
         );
       } finally {
         if (mounted) setState(() => _isLoading = false);
