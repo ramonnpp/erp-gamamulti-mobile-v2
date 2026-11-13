@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../theme/app_theme.dart';
 import '../../services/database_service.dart';
 import '../auth/login_screen.dart';
@@ -13,50 +14,65 @@ class SplashScreen extends StatefulWidget {
 
 class _SplashScreenState extends State<SplashScreen>
     with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<double> _fadeAnimation;
-  late Animation<double> _scaleAnimation;
-  late Animation<Offset> _slideAnimation;
+  late final AnimationController _controller;
+  late final Animation<double> _fadeIn;
+  late final Animation<double> _subtleScale;
+
+  String _statusText = 'Menyiapkan ruang kerja...';
+  double _progress = 0.35;
 
   @override
   void initState() {
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1800),
+      duration: const Duration(milliseconds: 800),
     );
-    _fadeAnimation = Tween<double>(
-      begin: 0.0,
+
+    _fadeIn = CurvedAnimation(parent: _controller, curve: Curves.easeOut);
+
+    _subtleScale = Tween<double>(
+      begin: 0.94,
       end: 1.0,
-    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
-    _scaleAnimation = Tween<double>(
-      begin: 0.7,
-      end: 1.0,
-    ).animate(CurvedAnimation(parent: _controller, curve: Curves.elasticOut));
-    _slideAnimation = Tween<Offset>(
-      begin: const Offset(0, 0.3),
-      end: Offset.zero,
     ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
 
     _controller.forward();
-    Future.delayed(const Duration(milliseconds: 2000), _checkLoginSession);
+    _initApp();
   }
 
-  Future<void> _checkLoginSession() async {
-    final user = await DatabaseService().loadUserSession();
+  Future<void> _initApp() async {
+    await Future.delayed(const Duration(milliseconds: 650));
+    if (!mounted) return;
+    setState(() {
+      _statusText = 'Memverifikasi sesi pengguna...';
+      _progress = 0.75;
+    });
+
+    final results = await Future.wait([
+      DatabaseService().loadUserSession(),
+      Future.delayed(const Duration(milliseconds: 950)),
+    ]);
+
+    if (!mounted) return;
+    setState(() {
+      _statusText = 'Membuka dashboard...';
+      _progress = 1.0;
+    });
+
+    await Future.delayed(const Duration(milliseconds: 300));
     if (!mounted) return;
 
-    if (user != null) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const MainNavigation()),
-      );
-    } else {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const LoginScreen()),
-      );
-    }
+    final user = results[0];
+    Navigator.pushReplacement(
+      context,
+      PageRouteBuilder(
+        pageBuilder: (_, __, ___) =>
+            user != null ? const MainNavigation() : const LoginScreen(),
+        transitionsBuilder: (_, animation, __, child) =>
+            FadeTransition(opacity: animation, child: child),
+        transitionDuration: const Duration(milliseconds: 350),
+      ),
+    );
   }
 
   @override
@@ -67,124 +83,134 @@ class _SplashScreenState extends State<SplashScreen>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Container(
-        width: double.infinity,
-        height: double.infinity,
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Color(0xFF0B4A2E), Color(0xFF10B981)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-        ),
-        child: Stack(
-          children: [
-            Positioned(
-              top: -80,
-              right: -80,
-              child: Container(
-                width: 220,
-                height: 220,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.08),
-                  shape: BoxShape.circle,
-                ),
-              ),
-            ),
-            Positioned(
-              bottom: -60,
-              left: -60,
-              child: Container(
-                width: 180,
-                height: 180,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.06),
-                  shape: BoxShape.circle,
-                ),
-              ),
-            ),
-            Center(
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle.light,
+      child: Scaffold(
+        backgroundColor: AppTheme.primaryColor,
+        body: SafeArea(
+          child: SizedBox.expand(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 28),
               child: FadeTransition(
-                opacity: _fadeAnimation,
-                child: SlideTransition(
-                  position: _slideAnimation,
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      ScaleTransition(
-                        scale: _scaleAnimation,
-                        child: Container(
-                          width: 120,
-                          height: 120,
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(28),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.25),
-                                blurRadius: 24,
-                                offset: const Offset(0, 12),
-                              ),
-                            ],
+                opacity: _fadeIn,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Spacer(flex: 3),
+
+                    // Wadah logo putih bersih
+                    ScaleTransition(
+                      scale: _subtleScale,
+                      child: Container(
+                        width: 132,
+                        height: 132,
+                        padding: const EdgeInsets.all(18),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(24),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.18),
+                              blurRadius: 20,
+                              offset: const Offset(0, 8),
+                            ),
+                          ],
+                        ),
+                        child: Image.asset(
+                          'assets/icon/app_icon.png',
+                          fit: BoxFit.contain,
+                          errorBuilder: (_, __, ___) => const Icon(
+                            Icons.business_center_rounded,
+                            size: 64,
+                            color: AppTheme.primaryColor,
                           ),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(28),
-                            child: Image.asset(
-                              'assets/icon/app_icon.png',
-                              width: 120,
-                              height: 120,
-                              fit: BoxFit.cover,
-                              errorBuilder: (context, error, stackTrace) {
-                                return const Icon(
-                                  Icons.business_center_rounded,
-                                  size: 56,
-                                  color: AppTheme.primaryColor,
-                                );
-                              },
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 28),
+
+                    const Text(
+                      'ERP GAMA MULTI MOBILE',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 1.4,
+                        color: Colors.white,
+                      ),
+                    ),
+
+                    const SizedBox(height: 8),
+
+                    Text(
+                      'Enterprise Resource Planning System',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w400,
+                        letterSpacing: 0.4,
+                        color: Colors.white.withValues(alpha: 0.78),
+                      ),
+                    ),
+
+                    const Spacer(flex: 3),
+
+                    // Step status dinamis + progress bar deterministik
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 250),
+                      child: Text(
+                        _statusText,
+                        key: ValueKey(_statusText),
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.white.withValues(alpha: 0.85),
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 10),
+
+                    SizedBox(
+                      width: 180,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: TweenAnimationBuilder<double>(
+                          tween: Tween<double>(begin: 0, end: _progress),
+                          duration: const Duration(milliseconds: 450),
+                          curve: Curves.easeOutCubic,
+                          builder: (_, value, __) => LinearProgressIndicator(
+                            value: value,
+                            minHeight: 3.5,
+                            backgroundColor: Colors.white.withValues(
+                              alpha: 0.16,
+                            ),
+                            valueColor: const AlwaysStoppedAnimation<Color>(
+                              AppTheme.accentColor,
                             ),
                           ),
                         ),
                       ),
-                      const SizedBox(height: 28),
-                      const Text(
-                        'GAMA MULTI ERP',
-                        style: TextStyle(
-                          fontSize: 26,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 2.0,
-                          color: Colors.white,
-                        ),
+                    ),
+
+                    const SizedBox(height: 18),
+
+                    Text(
+                      'PT Gama Multi Usaha Mandiri  •  v2.0',
+                      style: TextStyle(
+                        fontSize: 11,
+                        letterSpacing: 0.3,
+                        color: Colors.white.withValues(alpha: 0.52),
                       ),
-                      const SizedBox(height: 8),
-                      const Text(
-                        'Enterprise Resource Planning System',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Colors.white70,
-                          letterSpacing: 0.5,
-                        ),
-                      ),
-                      const SizedBox(height: 48),
-                      const SizedBox(
-                        width: 28,
-                        height: 28,
-                        child: CircularProgressIndicator(
-                          color: AppTheme.accentColor,
-                          strokeWidth: 2.5,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      const Text(
-                        'Memuat aplikasi...',
-                        style: TextStyle(fontSize: 12, color: Colors.white70),
-                      ),
-                    ],
-                  ),
+                    ),
+
+                    const SizedBox(height: 26),
+                  ],
                 ),
               ),
             ),
-          ],
+          ),
         ),
       ),
     );

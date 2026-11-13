@@ -11,7 +11,8 @@ class LeaveFormDialog extends StatefulWidget {
   State<LeaveFormDialog> createState() => _LeaveFormDialogState();
 }
 
-class _LeaveFormDialogState extends State<LeaveFormDialog> {
+class _LeaveFormDialogState extends State<LeaveFormDialog>
+    with SingleTickerProviderStateMixin {
   String _selectedLeaveType = 'Cuti Tahunan';
   final TextEditingController _reasonController = TextEditingController();
   DateTime? _startDate;
@@ -22,9 +23,38 @@ class _LeaveFormDialogState extends State<LeaveFormDialog> {
   String? _errorEnd;
   String? _errorReason;
 
+  late AnimationController _animController;
+  late Animation<double> _scaleAnim;
+  late Animation<double> _fadeAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    _animController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 400),
+    );
+
+    _scaleAnim = CurvedAnimation(
+      parent: _animController,
+      curve: Curves.easeOutBack,
+    );
+
+    _fadeAnim = CurvedAnimation(parent: _animController, curve: Curves.easeOut);
+
+    _animController.forward();
+  }
+
+  @override
+  void dispose() {
+    _animController.dispose();
+    _reasonController.dispose();
+    super.dispose();
+  }
+
   String _fmt(DateTime? d) {
     if (d == null) return 'Pilih Tanggal';
-    return DateFormat('EEEE, dd MMMM yyyy', 'id_ID').format(d);
+    return DateFormat('dd MMM yyyy', 'id_ID').format(d);
   }
 
   int? get _durationDays {
@@ -37,30 +67,33 @@ class _LeaveFormDialogState extends State<LeaveFormDialog> {
       context: context,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+        backgroundColor: const Color(
+          0xFFFFF1F2,
+        ), // Merah pastel lembut untuk peringatan
         contentPadding: const EdgeInsets.all(24),
         title: Row(
           children: [
             Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: AppTheme.primaryColor.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(12),
+              padding: const EdgeInsets.all(12),
+              decoration: const BoxDecoration(
+                color: Color(0xFFFEE2E2),
+                shape: BoxShape.circle,
               ),
               child: const Icon(
-                Icons.help_outline_rounded,
-                color: AppTheme.primaryColor,
+                Icons.warning_amber_rounded,
+                color: Color(0xFFDC2626),
                 size: 24,
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 14),
             const Expanded(
               child: Text(
-                'Konfirmasi Pengajuan',
+                'Konfirmasi Permanen',
                 style: TextStyle(
                   fontSize: 17,
-                  fontWeight: FontWeight.bold,
-                  color: AppTheme.textPrimary,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF991B1B),
                 ),
               ),
             ),
@@ -71,47 +104,56 @@ class _LeaveFormDialogState extends State<LeaveFormDialog> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'Data yang sudah dikirim tidak dapat dihapus atau diedit. Pastikan data sudah benar.',
+              'Data cuti yang dikirim akan langsung tersimpan dan tidak bisa ditarik ulang. Mohon periksa kembali:',
               style: TextStyle(
                 fontSize: 13,
-                color: AppTheme.textSecondary,
+                color: Color(0xFF7F1D1D),
                 height: 1.5,
               ),
             ),
             const SizedBox(height: 16),
-            _confirmRow(Icons.category_rounded, 'Jenis', _selectedLeaveType),
-            _confirmRow(
-              Icons.calendar_today_rounded,
-              'Mulai',
-              _fmt(_startDate),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: const Color(0xFFFECACA)),
+              ),
+              child: Column(
+                children: [
+                  _confirmRow('Jenis', _selectedLeaveType),
+                  const Divider(height: 16, color: Color(0xFFFEE2E2)),
+                  _confirmRow('Mulai', _fmt(_startDate)),
+                  const Divider(height: 16, color: Color(0xFFFEE2E2)),
+                  _confirmRow('Selesai', _fmt(_endDate)),
+                  if (_durationDays != null) ...[
+                    const Divider(height: 16, color: Color(0xFFFEE2E2)),
+                    _confirmRow('Durasi', '$_durationDays Hari Kerja'),
+                  ],
+                ],
+              ),
             ),
-            _confirmRow(Icons.event_rounded, 'Selesai', _fmt(_endDate)),
-            if (_durationDays != null)
-              _confirmRow(
-                Icons.schedule_rounded,
-                'Durasi',
-                '$_durationDays Hari',
-              ),
-            if (_reasonController.text.trim().isNotEmpty)
-              _confirmRow(
-                Icons.notes_rounded,
-                'Alasan',
-                _reasonController.text.trim(),
-              ),
           ],
         ),
         actions: [
           Row(
             children: [
               Expanded(
-                child: OutlinedButton(
+                child: TextButton(
                   onPressed: () => Navigator.pop(ctx, false),
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                    side: const BorderSide(color: Color(0xFFE2E8F0)),
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
                   ),
-                  child: const Text('Tidak', style: TextStyle(color: AppTheme.textSecondary, fontWeight: FontWeight.w600)),
+                  child: const Text(
+                    'Cek Lagi',
+                    style: TextStyle(
+                      color: Color(0xFF7F1D1D),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
               ),
               const SizedBox(width: 12),
@@ -119,12 +161,20 @@ class _LeaveFormDialogState extends State<LeaveFormDialog> {
                 child: ElevatedButton(
                   onPressed: () => Navigator.pop(ctx, true),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.primaryColor,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    backgroundColor: const Color(0xFFDC2626),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
                     elevation: 0,
                   ),
-                  child: const Text('Ya, Kirim', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                  child: const Text(
+                    'Ya, Simpan Data',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
                 ),
               ),
             ],
@@ -135,56 +185,45 @@ class _LeaveFormDialogState extends State<LeaveFormDialog> {
     return result ?? false;
   }
 
-  Widget _confirmRow(IconData icon, String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, size: 16, color: AppTheme.primaryColor),
-          const SizedBox(width: 8),
-          SizedBox(
-            width: 70,
-            child: Text(
-              label,
-              style: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: AppTheme.textSecondary,
-              ),
-            ),
+  Widget _confirmRow(String label, String value) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 13,
+            color: Color(0xFF7F1D1D),
+            fontWeight: FontWeight.w500,
           ),
-          Expanded(
-            child: Text(
-              value,
-              style: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: AppTheme.textPrimary,
-              ),
-            ),
+        ),
+        Text(
+          value,
+          style: const TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            color: Color(0xFF991B1B),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
   Future<void> _submit() async {
     setState(() {
-      _errorStart = _startDate == null ? 'Tanggal mulai wajib dipilih' : null;
-      _errorEnd = _endDate == null ? 'Tanggal selesai wajib dipilih' : null;
+      _errorStart = _startDate == null ? 'Pilih tanggal mulai' : null;
+      _errorEnd = _endDate == null ? 'Pilih tanggal selesai' : null;
       _errorReason = _reasonController.text.trim().isEmpty
           ? 'Alasan wajib diisi'
           : null;
       if (_startDate != null &&
           _endDate != null &&
           _endDate!.isBefore(_startDate!)) {
-        _errorEnd = 'Tanggal selesai harus setelah tanggal mulai';
+        _errorEnd = 'Tanggal selesai tidak valid';
       }
     });
-    if (_errorStart != null || _errorEnd != null || _errorReason != null) {
+    if (_errorStart != null || _errorEnd != null || _errorReason != null)
       return;
-    }
 
     final confirmed = await _confirmSubmit();
     if (!confirmed || !mounted) return;
@@ -212,388 +251,408 @@ class _LeaveFormDialogState extends State<LeaveFormDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-      child: Container(
-        constraints: const BoxConstraints(maxWidth: 420),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(24),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [Color(0xFF0B4A2E), Color(0xFF10B981)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.only(
-                  topLeft: Radius.circular(24),
-                  topRight: Radius.circular(24),
-                ),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: const Icon(
-                      Icons.beach_access_rounded,
-                      color: Colors.white,
-                      size: 26,
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  const Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Ajukan Cuti',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                        ),
-                        SizedBox(height: 2),
-                        Text(
-                          'Isi data dengan benar, tidak dapat diubah',
-                          style: TextStyle(fontSize: 12, color: Colors.white70),
-                        ),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close_rounded, color: Colors.white),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                ],
-              ),
-            ),
-            Flexible(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _label('Jenis Cuti', Icons.category_rounded),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: ['Cuti Tahunan', 'Cuti Bersama', 'Cuti Darurat']
-                          .map((type) {
-                            final selected = _selectedLeaveType == type;
-                            return GestureDetector(
-                              onTap: () {
-                                setState(() {
-                                  _selectedLeaveType = type;
-                                });
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 14,
-                                  vertical: 10,
-                                ),
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(20),
-                                  color: selected
-                                      ? AppTheme.primaryColor
-                                      : Colors.white,
-                                  border: Border.all(
-                                    color: selected
-                                        ? AppTheme.primaryColor
-                                        : const Color(0xFFE2E8F0),
-                                  ),
-                                ),
-                                child: Text(
-                                  type,
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                    color: selected
-                                        ? Colors.white
-                                        : AppTheme.textSecondary,
-                                  ),
-                                ),
-                              ),
-                            );
-                          })
-                          .toList(),
-                    ),
-                    const SizedBox(height: 16),
-
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _dateField(
-                            'Tanggal Mulai',
-                            _startDate,
-                            _errorStart,
-                            () async {
-                              final picked = await showDatePicker(
-                                context: context,
-                                initialDate: DateTime.now(),
-                                firstDate: DateTime.now(),
-                                lastDate: DateTime.now().add(
-                                  const Duration(days: 365),
-                                ),
-                              );
-                              if (picked != null) {
-                                setState(() {
-                                  _startDate = picked;
-                                  _errorStart = null;
-                                });
-                              }
-                            },
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: _dateField(
-                            'Tanggal Selesai',
-                            _endDate,
-                            _errorEnd,
-                            () async {
-                              final picked = await showDatePicker(
-                                context: context,
-                                initialDate: _startDate ?? DateTime.now(),
-                                firstDate: _startDate ?? DateTime.now(),
-                                lastDate: DateTime.now().add(
-                                  const Duration(days: 365),
-                                ),
-                              );
-                              if (picked != null) {
-                                setState(() {
-                                  _endDate = picked;
-                                  _errorEnd = null;
-                                });
-                              }
-                            },
-                          ),
-                        ),
-                      ],
-                    ),
-                    if (_durationDays != null) ...[
-                      const SizedBox(height: 10),
+    return ScaleTransition(
+      scale: _scaleAnim,
+      child: FadeTransition(
+        opacity: _fadeAnim,
+        child: Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(36),
+          ),
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 24,
+          ),
+          backgroundColor: const Color(
+            0xFFF0FDF4,
+          ), // Hijau mint pastel yang adem & organik
+          elevation: 8,
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 440),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // HEADER ORGANIK & HALUS
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 28, 20, 20),
+                  child: Row(
+                    children: [
                       Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
-                        ),
+                        padding: const EdgeInsets.all(14),
                         decoration: BoxDecoration(
-                          color: AppTheme.primaryColor.withValues(alpha: 0.06),
-                          borderRadius: BorderRadius.circular(10),
+                          color: AppTheme.primaryColor.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(20),
                         ),
-                        child: Row(
+                        child: const Icon(
+                          Icons.spa_rounded,
+                          color: AppTheme.primaryColor,
+                          size: 24,
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Icon(
-                              Icons.schedule_rounded,
-                              size: 16,
-                              color: AppTheme.primaryColor,
-                            ),
-                            const SizedBox(width: 6),
                             Text(
-                              'Durasi: $_durationDays Hari',
-                              style: const TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                                color: AppTheme.primaryColor,
+                              'Formulir Cuti',
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.w800,
+                                color: Color(0xFF064E3B),
+                                letterSpacing: -0.5,
+                              ),
+                            ),
+                            SizedBox(height: 2),
+                            Text(
+                              'Rencanakan waktu istirahat Anda',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Color(0xFF047857),
+                                fontWeight: FontWeight.w500,
                               ),
                             ),
                           ],
                         ),
                       ),
+                      IconButton(
+                        onPressed: () => Navigator.pop(context),
+                        icon: const Icon(
+                          Icons.close_rounded,
+                          color: Color(0xFF064E3B),
+                          size: 20,
+                        ),
+                        style: IconButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                        ),
+                      ),
                     ],
-                    const SizedBox(height: 16),
+                  ),
+                ),
 
-                    _label('Alasan / Keterangan', Icons.notes_rounded),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: _reasonController,
-                      maxLines: 3,
-                      onChanged: (_) => setState(() => _errorReason = null),
-                      decoration: InputDecoration(
-                        hintText: 'Masukkan alasan cuti Anda',
-                        hintStyle: const TextStyle(
-                          fontSize: 13,
-                          color: AppTheme.textSecondary,
-                        ),
-                        filled: true,
-                        fillColor: const Color(0xFFF8FAFC),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(14),
-                          borderSide: BorderSide(
-                            color: _errorReason != null
-                                ? AppTheme.errorColor
-                                : const Color(0xFFE2E8F0),
-                          ),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(14),
-                          borderSide: BorderSide(
-                            color: _errorReason != null
-                                ? AppTheme.errorColor
-                                : const Color(0xFFE2E8F0),
-                          ),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(14),
-                          borderSide: const BorderSide(
-                            color: AppTheme.primaryColor,
-                            width: 2,
-                          ),
-                        ),
-                      ),
-                    ),
-                    if (_errorReason != null) _errorText(_errorReason!),
-                    const SizedBox(height: 12),
-                    Container(
-                      padding: const EdgeInsets.all(12),
+                // KONTEN UTAMA DENGAN CARD PUTIH MELENGKUNG (FLOWING DESIGN)
+                Flexible(
+                  child: SingleChildScrollView(
+                    physics: const BouncingScrollPhysics(),
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+                    child: Container(
+                      padding: const EdgeInsets.all(20),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFFEF3C7),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: const Color(0xFFFDE68A)),
-                      ),
-                      child: const Row(
-                        children: [
-                          Icon(
-                            Icons.info_outline_rounded,
-                            size: 16,
-                            color: Color(0xFFD97706),
-                          ),
-                          SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              'Data tidak dapat dihapus atau diedit setelah dikirim.',
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: Color(0xFF92400E),
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(28),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(
+                              0xFF064E3B,
+                            ).withValues(alpha: 0.04),
+                            blurRadius: 16,
+                            offset: const Offset(0, 6),
                           ),
                         ],
                       ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () => Navigator.pop(context),
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        side: const BorderSide(color: Color(0xFFE2E8F0)),
-                      ),
-                      child: const Text(
-                        'Batal',
-                        style: TextStyle(
-                          color: AppTheme.textSecondary,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.primaryColor,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        elevation: 0,
-                      ),
-                      onPressed: _isSubmitting ? null : _submit,
-                      child: _isSubmitting
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'PILIH KATEGORI',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFF64748B),
+                              letterSpacing: 1.0,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+
+                          // PILIHAN KATEGORI CUTI LEBIH FLUID & EMPUK
+                          Row(
+                            children:
+                                [
+                                  'Cuti Tahunan',
+                                  'Cuti Bersama',
+                                  'Cuti Darurat',
+                                ].map((type) {
+                                  final selected = _selectedLeaveType == type;
+                                  return Expanded(
+                                    child: GestureDetector(
+                                      onTap: () => setState(
+                                        () => _selectedLeaveType = type,
+                                      ),
+                                      child: AnimatedContainer(
+                                        duration: const Duration(
+                                          milliseconds: 250,
+                                        ),
+                                        curve: Curves.easeInOut,
+                                        margin: EdgeInsets.only(
+                                          right: type != 'Cuti Darurat' ? 8 : 0,
+                                        ),
+                                        padding: const EdgeInsets.symmetric(
+                                          vertical: 14,
+                                        ),
+                                        alignment: Alignment.center,
+                                        decoration: BoxDecoration(
+                                          borderRadius: BorderRadius.circular(
+                                            18,
+                                          ),
+                                          color: selected
+                                              ? AppTheme.primaryColor
+                                              : const Color(0xFFF8FAFC),
+                                          border: Border.all(
+                                            color: selected
+                                                ? AppTheme.primaryColor
+                                                : const Color(0xFFE2E8F0),
+                                            width: selected ? 2 : 1,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          type.replaceAll('Cuti ', ''),
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w700,
+                                            color: selected
+                                                ? Colors.white
+                                                : const Color(0xFF475569),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                }).toList(),
+                          ),
+                          const SizedBox(height: 24),
+
+                          const Text(
+                            'PERIODE TANGGAL',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFF64748B),
+                              letterSpacing: 1.0,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _buildFluidDateField(
+                                  'Mulai',
+                                  _startDate,
+                                  _errorStart,
+                                  () async {
+                                    final picked = await showDatePicker(
+                                      context: context,
+                                      initialDate: DateTime.now(),
+                                      firstDate: DateTime.now(),
+                                      lastDate: DateTime.now().add(
+                                        const Duration(days: 365),
+                                      ),
+                                    );
+                                    if (picked != null) {
+                                      setState(() {
+                                        _startDate = picked;
+                                        _errorStart = null;
+                                      });
+                                    }
+                                  },
+                                ),
                               ),
-                            )
-                          : const Text(
-                              'Kirim',
-                              style: TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: _buildFluidDateField(
+                                  'Selesai',
+                                  _endDate,
+                                  _errorEnd,
+                                  () async {
+                                    final picked = await showDatePicker(
+                                      context: context,
+                                      initialDate: _startDate ?? DateTime.now(),
+                                      firstDate: _startDate ?? DateTime.now(),
+                                      lastDate: DateTime.now().add(
+                                        const Duration(days: 365),
+                                      ),
+                                    );
+                                    if (picked != null) {
+                                      setState(() {
+                                        _endDate = picked;
+                                        _errorEnd = null;
+                                      });
+                                    }
+                                  },
+                                ),
+                              ),
+                            ],
+                          ),
+
+                          if (_durationDays != null) ...[
+                            const SizedBox(height: 14),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 12,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFECFDF5),
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(
+                                  color: const Color(0xFFA7F3D0),
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(
+                                    Icons.bolt_rounded,
+                                    size: 18,
+                                    color: Color(0xFF059669),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Text(
+                                    'Durasi Total: $_durationDays Hari Kerja',
+                                    style: const TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w700,
+                                      color: Color(0xFF064E3B),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
+                          ],
+                          const SizedBox(height: 24),
+
+                          const Text(
+                            'ALASAN / CATATAN',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFF64748B),
+                              letterSpacing: 1.0,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: _reasonController,
+                            maxLines: 3,
+                            onChanged: (_) =>
+                                setState(() => _errorReason = null),
+                            decoration: InputDecoration(
+                              hintText: 'Tuliskan alasan atau keterangan...',
+                              hintStyle: const TextStyle(
+                                fontSize: 13,
+                                color: Color(0xFF94A3B8),
+                              ),
+                              filled: true,
+                              fillColor: const Color(0xFFF8FAFC),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(18),
+                                borderSide: BorderSide(
+                                  color: _errorReason != null
+                                      ? AppTheme.errorColor
+                                      : const Color(0xFFE2E8F0),
+                                ),
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(18),
+                                borderSide: BorderSide(
+                                  color: _errorReason != null
+                                      ? AppTheme.errorColor
+                                      : const Color(0xFFE2E8F0),
+                                ),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(18),
+                                borderSide: const BorderSide(
+                                  color: AppTheme.primaryColor,
+                                  width: 2,
+                                ),
+                              ),
+                            ),
+                          ),
+                          if (_errorReason != null)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 6, left: 4),
+                              child: Text(
+                                _errorReason!,
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: AppTheme.errorColor,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
                     ),
                   ),
-                ],
-              ),
+                ),
+
+                // TOMBOL AKSI BAWAH
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(18),
+                            ),
+                          ),
+                          child: const Text(
+                            'Batal',
+                            style: TextStyle(
+                              color: Color(0xFF64748B),
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: _isSubmitting ? null : _submit,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppTheme.primaryColor,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(18),
+                            ),
+                            elevation: 0,
+                          ),
+                          child: _isSubmitting
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : const Text(
+                                  'Kirim Pengajuan',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _label(String text, IconData icon) {
-    return Row(
-      children: [
-        Icon(icon, size: 16, color: AppTheme.primaryColor),
-        const SizedBox(width: 6),
-        Text(
-          text,
-          style: const TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.bold,
-            color: AppTheme.textPrimary,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _errorText(String msg) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 6),
-      child: Row(
-        children: [
-          const Icon(
-            Icons.error_outline_rounded,
-            size: 14,
-            color: AppTheme.errorColor,
-          ),
-          const SizedBox(width: 4),
-          Text(
-            msg,
-            style: const TextStyle(
-              fontSize: 12,
-              color: AppTheme.errorColor,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _dateField(
+  Widget _buildFluidDateField(
     String label,
     DateTime? date,
     String? error,
@@ -602,29 +661,34 @@ class _LeaveFormDialogState extends State<LeaveFormDialog> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _label(label, Icons.calendar_today_rounded),
-        const SizedBox(height: 8),
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 11,
+            color: Color(0xFF64748B),
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 6),
         GestureDetector(
           onTap: onTap,
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(18),
               border: Border.all(
                 color: error != null
                     ? AppTheme.errorColor
                     : const Color(0xFFE2E8F0),
               ),
-              color: date != null
-                  ? AppTheme.primaryColor.withValues(alpha: 0.05)
-                  : Colors.white,
+              color: const Color(0xFFF8FAFC),
             ),
             child: Row(
               children: [
-                Icon(
+                const Icon(
                   Icons.calendar_today_rounded,
                   color: AppTheme.primaryColor,
-                  size: 18,
+                  size: 16,
                 ),
                 const SizedBox(width: 8),
                 Expanded(
@@ -632,12 +696,12 @@ class _LeaveFormDialogState extends State<LeaveFormDialog> {
                     _fmt(date),
                     style: TextStyle(
                       color: date != null
-                          ? AppTheme.textPrimary
-                          : AppTheme.textSecondary,
+                          ? const Color(0xFF1E293B)
+                          : const Color(0xFF94A3B8),
                       fontWeight: date != null
-                          ? FontWeight.w600
+                          ? FontWeight.w700
                           : FontWeight.normal,
-                      fontSize: 12,
+                      fontSize: 13,
                     ),
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -646,14 +710,15 @@ class _LeaveFormDialogState extends State<LeaveFormDialog> {
             ),
           ),
         ),
-        if (error != null) _errorText(error),
+        if (error != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 4, left: 4),
+            child: Text(
+              error,
+              style: const TextStyle(fontSize: 11, color: AppTheme.errorColor),
+            ),
+          ),
       ],
     );
-  }
-
-  @override
-  void dispose() {
-    _reasonController.dispose();
-    super.dispose();
   }
 }

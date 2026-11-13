@@ -68,12 +68,12 @@ class _CustomSnackbarWidgetState extends State<_CustomSnackbarWidget>
   void initState() {
     super.initState();
     _controller = AnimationController(
-      duration: const Duration(milliseconds: 400),
+      duration: const Duration(milliseconds: 350),
       vsync: this,
     );
 
     _slideAnimation = Tween<Offset>(
-      begin: const Offset(0, -1),
+      begin: const Offset(0, -1.2),
       end: Offset.zero,
     ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
 
@@ -84,7 +84,7 @@ class _CustomSnackbarWidgetState extends State<_CustomSnackbarWidget>
 
     _controller.forward();
 
-    Future.delayed(widget.duration - const Duration(milliseconds: 400), () {
+    Future.delayed(widget.duration - const Duration(milliseconds: 350), () {
       if (mounted) {
         _controller.reverse();
       }
@@ -97,7 +97,7 @@ class _CustomSnackbarWidgetState extends State<_CustomSnackbarWidget>
     super.dispose();
   }
 
-  Color _getBackgroundColor() {
+  Color _getTypeColor() {
     switch (widget.type) {
       case SnackbarType.success:
         return AppTheme.successColor;
@@ -106,27 +106,42 @@ class _CustomSnackbarWidgetState extends State<_CustomSnackbarWidget>
       case SnackbarType.info:
         return AppTheme.primaryColor;
       case SnackbarType.warning:
-        return AppTheme.accentColor;
+        return const Color(0xFFD97706);
     }
   }
 
   IconData _getIcon() {
     switch (widget.type) {
       case SnackbarType.success:
-        return Icons.check_circle;
+        return Icons.check_circle_rounded;
       case SnackbarType.error:
-        return Icons.error;
+        return Icons.error_rounded;
       case SnackbarType.info:
-        return Icons.info;
+        return Icons.info_rounded;
       case SnackbarType.warning:
-        return Icons.warning;
+        return Icons.warning_rounded;
+    }
+  }
+
+  String _getTitle() {
+    switch (widget.type) {
+      case SnackbarType.success:
+        return 'Berhasil';
+      case SnackbarType.error:
+        return 'Gagal';
+      case SnackbarType.info:
+        return 'Informasi';
+      case SnackbarType.warning:
+        return 'Peringatan';
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final typeColor = _getTypeColor();
+
     return Positioned(
-      top: MediaQuery.of(context).padding.top + 16,
+      top: MediaQuery.of(context).padding.top + 12,
       left: 16,
       right: 16,
       child: SlideTransition(
@@ -136,40 +151,78 @@ class _CustomSnackbarWidgetState extends State<_CustomSnackbarWidget>
           child: Material(
             color: Colors.transparent,
             child: Container(
-              padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: _getBackgroundColor(),
-                borderRadius: BorderRadius.circular(12),
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.15),
+                    color: const Color(0xFF0F172A).withValues(alpha: 0.1),
                     blurRadius: 20,
-                    offset: const Offset(0, 8),
+                    offset: const Offset(0, 6),
                   ),
                 ],
               ),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Icon(_getIcon(), color: Colors.white, size: 24),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      widget.message,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(18),
+                child: IntrinsicHeight(
+                  child: Row(
+                    children: [
+                      // Indikator garis warna di sisi kiri
+                      Container(width: 6, color: typeColor),
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 12,
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: typeColor.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Icon(
+                                  _getIcon(),
+                                  color: typeColor,
+                                  size: 22,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Text(
+                                      _getTitle(),
+                                      style: TextStyle(
+                                        color: typeColor,
+                                        fontSize: 12.5,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      widget.message,
+                                      style: const TextStyle(
+                                        color: AppTheme.textPrimary,
+                                        fontSize: 12.5,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
-                    ),
+                    ],
                   ),
-                ],
+                ),
               ),
             ),
           ),

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/custom_snackbar.dart';
@@ -46,70 +47,277 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     }
   }
 
-  Future<void> _confirmAndSubmit(bool isCheckIn) async {
+  DateTime? _parseTimeToday(String raw) {
+    final cleaned = raw
+        .toUpperCase()
+        .replaceAll('WIB', '')
+        .replaceAll('WITA', '')
+        .replaceAll('WIT', '')
+        .replaceAll('.', ':')
+        .trim();
+
+    if (cleaned.isEmpty || cleaned == '--:--' || !cleaned.contains(':')) {
+      return null;
+    }
+
+    final parts = cleaned.split(':');
+    if (parts.length < 2) return null;
+
+    final hour = int.tryParse(parts[0].trim());
+    final minute = int.tryParse(parts[1].trim());
+    final second = parts.length >= 3 ? (int.tryParse(parts[2].trim()) ?? 0) : 0;
+
+    if (hour == null || minute == null) return null;
+    return DateTime(_now.year, _now.month, _now.day, hour, minute, second);
+  }
+
+  String _formatShortTime(String raw) {
+    final dt = _parseTimeToday(raw);
+    if (dt == null) return '--:--';
+    return DateFormat('HH:mm').format(dt);
+  }
+
+  Future<void> _confirmAndSubmit(bool isDatang) async {
     if (_saving) return;
+    HapticFeedback.mediumImpact();
+
     final now = TimeOfDay.now();
     final timeStr =
         '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')} WIB';
 
-    final confirmed = await showDialog<bool>(
+    // Desain Redesign Total: Layout terpusat dengan Hero Icon & Split Info Card
+    final confirmed = await showModalBottomSheet<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(
-          children: [
-            Icon(
-              isCheckIn ? Icons.login_rounded : Icons.logout_rounded,
-              color: isCheckIn ? AppTheme.successColor : AppTheme.primaryColor,
-            ),
-            const SizedBox(width: 10),
-            Text(
-              isCheckIn ? 'Konfirmasi Check In' : 'Konfirmasi Check Out',
-              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
-            ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _confirmRow(Icons.schedule_rounded, 'Waktu Presensi', timeStr),
-            const SizedBox(height: 12),
-            const Text(
-              'Pastikan waktu sudah sesuai. Data akan disimpan dan tidak dapat diubah.',
-              style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
-            ),
-          ],
-        ),
-        actions: [
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: () => Navigator.pop(ctx, false),
-                  child: const Text('Tidak'),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: ElevatedButton(
-                  onPressed: () => Navigator.pop(ctx, true),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: isCheckIn
-                        ? AppTheme.successColor
-                        : AppTheme.primaryColor,
-                  ),
-                  child: const Text(
-                    'Ya, Kirim',
-                    style: TextStyle(color: Colors.white),
-                  ),
-                ),
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) {
+        return Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+            boxShadow: [
+              BoxShadow(
+                color: Color(0x1F000000),
+                blurRadius: 24,
+                offset: Offset(0, -6),
               ),
             ],
           ),
-        ],
-      ),
+          padding: EdgeInsets.fromLTRB(
+            24,
+            12,
+            24,
+            MediaQuery.of(ctx).padding.bottom + 24,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Garis Handle Atas
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE2E8F0),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 24),
+
+              // Hero Icon Bundar di Tengah
+              Container(
+                width: 64,
+                height: 64,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color:
+                      (isDatang ? AppTheme.successColor : AppTheme.primaryColor)
+                          .withValues(alpha: 0.1),
+                ),
+                child: Icon(
+                  isDatang ? Icons.login_rounded : Icons.logout_rounded,
+                  size: 30,
+                  color: isDatang
+                      ? AppTheme.successColor
+                      : AppTheme.primaryColor,
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // Judul & Subjudul Terpusat
+              Text(
+                isDatang ? 'Konfirmasi Kehadiran' : 'Konfirmasi Kepulangan',
+                style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                  color: AppTheme.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                isDatang
+                    ? 'Anda akan mencatat waktu masuk kerja'
+                    : 'Anda akan mengakhiri sesi kerja hari ini',
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: AppTheme.textSecondary,
+                ),
+                textAlign: TextAlign.center,
+              ),
+
+              const SizedBox(height: 24),
+
+              // Info Waktu Presensi Model Modern Grid/Card
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                      ),
+                      child: const Icon(
+                        Icons.access_time_rounded,
+                        size: 20,
+                        color: AppTheme.primaryColor,
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Waktu Tercatat Saat Ini',
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w600,
+                              color: AppTheme.textSecondary,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            timeStr,
+                            style: const TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w800,
+                              color: AppTheme.textPrimary,
+                              fontFeatures: [FontFeature.tabularFigures()],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFDCFCE7),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: const Text(
+                        'LIVE',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          color: Color(0xFF166534),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              // Catatan kecil
+              Row(
+                children: [
+                  const Icon(
+                    Icons.info_outline_rounded,
+                    size: 15,
+                    color: AppTheme.textSecondary,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Pastikan data sudah benar. Presensi tidak dapat dibatalkan.',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 24),
+
+              // Tombol Aksi Berjajar Luas
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(ctx, false),
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size(0, 50),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        side: const BorderSide(color: Color(0xFFCBD5E1)),
+                        foregroundColor: AppTheme.textSecondary,
+                      ),
+                      child: const Text(
+                        'Batal',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.pop(ctx, true),
+                      style: ElevatedButton.styleFrom(
+                        elevation: 0,
+                        minimumSize: const Size(0, 50),
+                        backgroundColor: isDatang
+                            ? AppTheme.successColor
+                            : AppTheme.primaryColor,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                      child: Text(
+                        isDatang ? 'Kirim Datang' : 'Kirim Pulang',
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
     );
+
     if (confirmed != true || !mounted) return;
 
     setState(() => _saving = true);
@@ -117,14 +325,14 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     final userId = db.getCurrentUser()?['id'] ?? 1;
     final ok = await db.recordAttendance(
       userId: userId,
-      type: isCheckIn ? 'CheckIn' : 'CheckOut',
+      type: isDatang ? 'CheckIn' : 'CheckOut',
       time: timeStr,
     );
     setState(() => _saving = false);
     if (!mounted) return;
     if (ok) {
       setState(() {
-        if (isCheckIn) {
+        if (isDatang) {
           _checkInTime = timeStr;
         } else {
           _checkOutTime = timeStr;
@@ -132,319 +340,506 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       });
       CustomSnackbar.success(
         context,
-        isCheckIn
-            ? 'Check In $timeStr berhasil'
-            : 'Check Out $timeStr berhasil',
+        isDatang
+            ? 'Presensi Datang pukul $timeStr berhasil'
+            : 'Presensi Pulang pukul $timeStr berhasil',
       );
     } else {
       CustomSnackbar.error(context, 'Gagal menyimpan presensi. Coba lagi.');
     }
   }
 
-  Widget _confirmRow(IconData icon, String label, String value) {
-    return Row(
-      children: [
-        Container(
-          padding: const EdgeInsets.all(7),
-          decoration: BoxDecoration(
-            color: AppTheme.primaryColor.withValues(alpha: 0.08),
-            borderRadius: BorderRadius.circular(9),
-          ),
-          child: Icon(icon, size: 16, color: AppTheme.primaryColor),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                label,
-                style: const TextStyle(
-                  fontSize: 11,
-                  color: AppTheme.textSecondary,
-                ),
-              ),
-              Text(
-                value,
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
   String get _dateId => DateFormat('EEEE, dd MMMM yyyy', 'id_ID').format(_now);
-  String get _timeId => DateFormat('HH:mm:ss', 'id_ID').format(_now);
-  bool get _checkedIn => _checkInTime != '--:--';
-  bool get _checkedOut => _checkOutTime != '--:--';
+  String get _hourMin => DateFormat('HH:mm', 'id_ID').format(_now);
+  String get _sec => DateFormat('ss', 'id_ID').format(_now);
+  bool get _checkedIn => _parseTimeToday(_checkInTime) != null;
+  bool get _checkedOut => _parseTimeToday(_checkOutTime) != null;
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppTheme.backgroundColor,
-      body: CustomScrollView(
-        slivers: [
-          SliverAppBar(
-            expandedHeight: 200,
-            pinned: true,
-            backgroundColor: AppTheme.primaryColor,
-            foregroundColor: Colors.white,
-            flexibleSpace: FlexibleSpaceBar(
-              background: Container(
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [Color(0xFF0B4A2E), Color(0xFF10B981)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
+    final bool isComplete = _checkedIn && _checkedOut;
+    final bool isDatangMode = !_checkedIn;
+
+    String phaseBadge = 'SIAP ABSEN DATANG';
+    Color phaseBadgeBg = AppTheme.accentColor;
+    Color phaseBadgeText = AppTheme.primaryColor;
+
+    if (_checkedIn && !_checkedOut) {
+      phaseBadge = 'SHIFT AKTIF • SIAP ABSEN PULANG';
+      phaseBadgeBg = const Color(0xFF10B981);
+      phaseBadgeText = Colors.white;
+    } else if (isComplete) {
+      phaseBadge = 'PRESENSI HARI INI SELESAI';
+      phaseBadgeBg = Colors.white.withValues(alpha: 0.16);
+      phaseBadgeText = Colors.white;
+    }
+
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle.light,
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF1F5F9),
+        body: RefreshIndicator(
+          color: AppTheme.primaryColor,
+          onRefresh: _loadAttendanceData,
+          child: CustomScrollView(
+            slivers: [
+              // 1. Header Hijau Korporat Solid
+              SliverToBoxAdapter(
+                child: Container(
+                  width: double.infinity,
+                  decoration: const BoxDecoration(
+                    color: AppTheme.primaryColor,
+                    borderRadius: BorderRadius.vertical(
+                      bottom: Radius.circular(30),
+                    ),
+                  ),
+                  padding: EdgeInsets.fromLTRB(
+                    20,
+                    MediaQuery.of(context).padding.top + 14,
+                    20,
+                    28,
+                  ),
+                  child: Column(
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'Terminal Presensi',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white,
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: phaseBadgeBg,
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(
+                              phaseBadge,
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 0.4,
+                                color: phaseBadgeText,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 22),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.baseline,
+                        textBaseline: TextBaseline.alphabetic,
+                        children: [
+                          Text(
+                            _hourMin,
+                            style: const TextStyle(
+                              fontSize: 54,
+                              fontWeight: FontWeight.w800,
+                              height: 1.0,
+                              letterSpacing: 1.5,
+                              color: Colors.white,
+                              fontFeatures: [FontFeature.tabularFigures()],
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppTheme.accentColor,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              _sec,
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w800,
+                                color: AppTheme.primaryColor,
+                                fontFeatures: [FontFeature.tabularFigures()],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        '$_dateId • WIB',
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white.withValues(alpha: 0.8),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                child: SafeArea(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 48, 20, 20),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.18),
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                              child: const Icon(
-                                Icons.fact_check_rounded,
-                                size: 28,
-                              ),
-                            ),
-                            const SizedBox(width: 14),
-                            const Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Presensi',
-                                    style: TextStyle(
-                                      fontSize: 24,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.white,
-                                    ),
-                                  ),
-                                  Text(
-                                    'Absensi harian karyawan',
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      color: Colors.white70,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
+              ),
+
+              // 2. Konten Utama
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 26, 20, 32),
+                  child: Column(
+                    children: [
+                      _AnimatedEntry(
+                        delayMs: 60,
+                        child: _CircularTapAttendanceButton(
+                          isComplete: isComplete,
+                          isDatangMode: isDatangMode,
+                          isSaving: _saving,
+                          onTap: () => _confirmAndSubmit(isDatangMode),
                         ),
-                        const SizedBox(height: 16),
-                        Container(
-                          width: double.infinity,
+                      ),
+                      const SizedBox(height: 28),
+                      _AnimatedEntry(
+                        delayMs: 150,
+                        child: Container(
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 10,
+                            horizontal: 16,
+                            vertical: 14,
                           ),
                           decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.16),
-                            borderRadius: BorderRadius.circular(12),
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(18),
+                            border: Border.all(color: const Color(0xFFD0D9E4)),
                           ),
                           child: Row(
                             children: [
-                              const Icon(
-                                Icons.calendar_today_rounded,
-                                size: 16,
-                                color: Colors.white,
-                              ),
-                              const SizedBox(width: 8),
                               Expanded(
-                                child: Text(
-                                  _dateId,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                  ),
+                                child: _compactLogItem(
+                                  icon: Icons.login_rounded,
+                                  label: 'Jam Datang',
+                                  time: _formatShortTime(_checkInTime),
+                                  active: _checkedIn,
+                                  color: AppTheme.successColor,
                                 ),
                               ),
-                              Text(
-                                _timeId,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.bold,
-                                  fontFeatures: [FontFeature.tabularFigures()],
+                              Container(
+                                width: 1,
+                                height: 38,
+                                color: const Color(0xFFE2E8F0),
+                              ),
+                              Expanded(
+                                child: _compactLogItem(
+                                  icon: Icons.logout_rounded,
+                                  label: 'Jam Pulang',
+                                  time: _formatShortTime(_checkOutTime),
+                                  active: _checkedOut,
+                                  color: AppTheme.primaryColor,
                                 ),
                               ),
                             ],
                           ),
                         ),
-                      ],
+                      ),
+                      const SizedBox(height: 14),
+                      _AnimatedEntry(
+                        delayMs: 220,
+                        child: Text(
+                          isComplete
+                              ? 'Terima kasih, seluruh catatan presensi hari ini sudah tersimpan.'
+                              : (isDatangMode
+                                    ? 'Ketuk tombol lingkaran di atas untuk mencatat kehadiran datang.'
+                                    : 'Ketuk tombol lingkaran di atas saat jam kerja berakhir.'),
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: AppTheme.textSecondary,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _compactLogItem({
+    required IconData icon,
+    required String label,
+    required String time,
+    required bool active,
+    required Color color,
+  }) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: active
+                ? color.withValues(alpha: 0.12)
+                : const Color(0xFFF1F5F9),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(
+            icon,
+            size: 18,
+            color: active ? color : AppTheme.textSecondary,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: AppTheme.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              time,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+                color: active ? AppTheme.textPrimary : AppTheme.textSecondary,
+                fontFeatures: const [FontFeature.tabularFigures()],
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _CircularTapAttendanceButton extends StatefulWidget {
+  final bool isComplete;
+  final bool isDatangMode;
+  final bool isSaving;
+  final VoidCallback onTap;
+
+  const _CircularTapAttendanceButton({
+    required this.isComplete,
+    required this.isDatangMode,
+    required this.isSaving,
+    required this.onTap,
+  });
+
+  @override
+  State<_CircularTapAttendanceButton> createState() =>
+      _CircularTapAttendanceButtonState();
+}
+
+class _CircularTapAttendanceButtonState
+    extends State<_CircularTapAttendanceButton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulseController;
+  bool _pressed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _pulseController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bool enabled = !widget.isComplete && !widget.isSaving;
+
+    final Color coreColor = widget.isComplete
+        ? const Color(0xFF64748B)
+        : (widget.isDatangMode ? AppTheme.successColor : AppTheme.primaryColor);
+
+    final Color ringBorderColor = widget.isComplete
+        ? const Color(0xFFCBD5E1)
+        : (widget.isDatangMode ? AppTheme.successColor : AppTheme.accentColor);
+
+    final IconData iconData = widget.isComplete
+        ? Icons.verified_rounded
+        : (widget.isDatangMode
+              ? Icons.touch_app_rounded
+              : Icons.logout_rounded);
+
+    final String mainLabel = widget.isComplete
+        ? 'SELESAI'
+        : (widget.isDatangMode ? 'DATANG' : 'PULANG');
+
+    final String subLabel = widget.isComplete
+        ? 'Tercatat Lengkap'
+        : (widget.isDatangMode ? 'Tap Masuk Kerja' : 'Tap Pulang Kerja');
+
+    return SizedBox(
+      width: 224,
+      height: 224,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          if (enabled)
+            AnimatedBuilder(
+              animation: _pulseController,
+              builder: (_, __) {
+                final t = _pulseController.value;
+                return Transform.scale(
+                  scale: 0.86 + (t * 0.24),
+                  child: Container(
+                    width: 210,
+                    height: 210,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: coreColor.withValues(alpha: (1.0 - t) * 0.45),
+                        width: 2.5,
+                      ),
                     ),
                   ),
+                );
+              },
+            ),
+          Container(
+            width: 192,
+            height: 192,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.white,
+              border: Border.all(
+                color: ringBorderColor.withValues(alpha: 0.45),
+                width: 2,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: coreColor.withValues(alpha: 0.18),
+                  blurRadius: 24,
+                  offset: const Offset(0, 10),
+                ),
+              ],
+            ),
+          ),
+          GestureDetector(
+            onTapDown: enabled ? (_) => setState(() => _pressed = true) : null,
+            onTapUp: enabled
+                ? (_) {
+                    setState(() => _pressed = false);
+                    widget.onTap();
+                  }
+                : null,
+            onTapCancel: enabled
+                ? () => setState(() => _pressed = false)
+                : null,
+            child: AnimatedScale(
+              scale: _pressed ? 0.93 : 1.0,
+              duration: const Duration(milliseconds: 120),
+              curve: Curves.easeOut,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 280),
+                width: 164,
+                height: 164,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: coreColor,
+                  border: Border.all(
+                    color: AppTheme.accentColor.withValues(
+                      alpha: widget.isComplete ? 0.0 : 0.55,
+                    ),
+                    width: 2,
+                  ),
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    if (widget.isSaving)
+                      const SizedBox(
+                        width: 32,
+                        height: 32,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 3,
+                          color: Colors.white,
+                        ),
+                      )
+                    else
+                      Icon(iconData, size: 38, color: Colors.white),
+                    const SizedBox(height: 10),
+                    Text(
+                      mainLabel,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.8,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      subLabel,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white.withValues(alpha: 0.82),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
           ),
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
-              child: Column(
-                children: [
-                  _statusCard(),
-                  const SizedBox(height: 24),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 54,
-                    child: ElevatedButton.icon(
-                      onPressed: (_checkedIn || _saving)
-                          ? null
-                          : () => _confirmAndSubmit(true),
-                      icon: _saving
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : const Icon(Icons.login_rounded),
-                      label: Text(_checkedIn ? 'SUDAH CHECK IN' : 'CHECK IN'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.successColor,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        textStyle: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 15,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 54,
-                    child: OutlinedButton.icon(
-                      onPressed: (!_checkedIn || _checkedOut || _saving)
-                          ? null
-                          : () => _confirmAndSubmit(false),
-                      icon: const Icon(Icons.logout_rounded),
-                      label: Text(
-                        _checkedOut ? 'SUDAH CHECK OUT' : 'CHECK OUT',
-                      ),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: AppTheme.primaryColor,
-                        side: const BorderSide(
-                          color: AppTheme.primaryColor,
-                          width: 1.5,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        textStyle: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 15,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  const Text(
-                    'Check Out aktif setelah Check In.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: AppTheme.textSecondary,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
         ],
       ),
     );
   }
+}
 
-  Widget _statusCard() {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: _timeColumn(
-              Icons.login_rounded,
-              'Jam Datang',
-              _checkInTime,
-              AppTheme.successColor,
-            ),
-          ),
-          Container(width: 1, height: 72, color: const Color(0xFFE2E8F0)),
-          Expanded(
-            child: _timeColumn(
-              Icons.logout_rounded,
-              'Jam Pulang',
-              _checkOutTime,
-              AppTheme.primaryColor,
-            ),
-          ),
-        ],
-      ),
-    );
+class _AnimatedEntry extends StatefulWidget {
+  final int delayMs;
+  final Widget child;
+  const _AnimatedEntry({required this.delayMs, required this.child});
+
+  @override
+  State<_AnimatedEntry> createState() => _AnimatedEntryState();
+}
+
+class _AnimatedEntryState extends State<_AnimatedEntry> {
+  bool _visible = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final delay = widget.delayMs;
+    Future.delayed(Duration(milliseconds: delay), () {
+      if (mounted) setState(() => _visible = true);
+    });
   }
 
-  Widget _timeColumn(IconData icon, String label, String time, Color color) {
-    return Column(
-      children: [
-        Container(
-          padding: const EdgeInsets.all(9),
-          decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(11),
-          ),
-          child: Icon(icon, color: color, size: 20),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          label,
-          style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          time,
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-            color: color,
-          ),
-        ),
-      ],
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedOpacity(
+      opacity: _visible ? 1.0 : 0.0,
+      duration: const Duration(milliseconds: 420),
+      curve: Curves.easeOut,
+      child: AnimatedSlide(
+        offset: _visible ? Offset.zero : const Offset(0, 0.045),
+        duration: const Duration(milliseconds: 420),
+        curve: Curves.easeOutCubic,
+        child: widget.child,
+      ),
     );
   }
 }

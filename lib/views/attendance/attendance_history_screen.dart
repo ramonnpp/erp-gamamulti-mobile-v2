@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../../theme/app_theme.dart';
 import '../../services/database_service.dart';
@@ -14,41 +16,30 @@ class AttendanceHistoryScreen extends StatefulWidget {
 }
 
 class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
-  List<Map<String, dynamic>> _allData = [];
+  final List<dynamic> _allData = [];
+  final List<dynamic> _filteredList = [];
+  final List<String> _yearsList = ['Semua'];
   bool _isLoading = true;
-  bool _isFilterExpanded = false;
+  bool _isPeriodPanelOpen = false;
+  bool _isFilterHubVisible = true;
   String _filterStatus = 'Semua';
   String _filterMonth = 'Semua';
   String _filterYear = 'Semua';
+  int _expandedIndex = -1;
 
-  final List<String> _months = [
-    'Semua',
-    '01',
-    '02',
-    '03',
-    '04',
-    '05',
-    '06',
-    '07',
-    '08',
-    '09',
-    '10',
-    '11',
-    '12',
-  ];
-  final List<String> _monthNames = [
-    'Januari',
-    'Februari',
-    'Maret',
-    'April',
-    'Mei',
-    'Juni',
-    'Juli',
-    'Agustus',
-    'September',
-    'Oktober',
-    'November',
-    'Desember',
+  static const _monthItems = [
+    {'code': '01', 'short': 'JAN', 'full': 'Januari'},
+    {'code': '02', 'short': 'FEB', 'full': 'Februari'},
+    {'code': '03', 'short': 'MAR', 'full': 'Maret'},
+    {'code': '04', 'short': 'APR', 'full': 'April'},
+    {'code': '05', 'short': 'MEI', 'full': 'Mei'},
+    {'code': '06', 'short': 'JUN', 'full': 'Juni'},
+    {'code': '07', 'short': 'JUL', 'full': 'Juli'},
+    {'code': '08', 'short': 'AGU', 'full': 'Agustus'},
+    {'code': '09', 'short': 'SEP', 'full': 'September'},
+    {'code': '10', 'short': 'OKT', 'full': 'Oktober'},
+    {'code': '11', 'short': 'NOV', 'full': 'November'},
+    {'code': '12', 'short': 'DES', 'full': 'Desember'},
   ];
 
   @override
@@ -60,101 +51,138 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
   Future<void> _loadAttendanceHistory() async {
     final user = DatabaseService().getCurrentUser();
     if (user == null) {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
       return;
     }
+
     final history = await DatabaseService().getAttendanceHistory(
       userId: user['id'],
     );
-    Map<String, Map<String, String>> grouped = {};
-    for (var record in history) {
-      String date = record['date'].toString();
-      String type = record['type'].toString();
-      String timestamp = record['timestamp'].toString();
+
+    final Map<String, dynamic> grouped = {};
+    for (final record in history) {
+      final date = record['date'].toString();
+      final type = record['type'].toString();
+      final timestamp = record['timestamp'].toString();
       if (!grouped.containsKey(date)) {
         grouped[date] = {'checkIn': '-', 'checkOut': '-'};
       }
       if (type == 'CheckIn') {
-        grouped[date]!['checkIn'] = timestamp;
+        grouped[date]['checkIn'] = timestamp;
       } else if (type == 'CheckOut') {
-        grouped[date]!['checkOut'] = timestamp;
+        grouped[date]['checkOut'] = timestamp;
       }
     }
-    List<Map<String, dynamic>> processed = [];
+
+    final List<dynamic> processed = [];
+    final Map<String, bool> yearMap = {};
     grouped.forEach((date, times) {
       try {
-        String dateOnly = date.split(' ')[0].replaceAll('T', '');
-        DateTime dt = DateTime.parse(dateOnly);
-        String dayName = DateFormat('EEEE', 'id_ID').format(dt);
-        String formattedDate = DateFormat('dd MMMM yyyy', 'id_ID').format(dt);
-        bool isWeekend = dt.weekday == 6 || dt.weekday == 7;
-        bool hasCheckIn = times['checkIn'] != '-';
+        final dateOnly = date.toString().split(' ')[0].replaceAll('T', '');
+        final dt = DateTime.parse(dateOnly);
+        final dayName = DateFormat('EEEE', 'id_ID').format(dt);
+        final shortMonth = DateFormat('MMM', 'id_ID').format(dt).toUpperCase();
+        final dayNum = DateFormat('dd', 'id_ID').format(dt);
+        final formattedDate = DateFormat('dd MMMM yyyy', 'id_ID').format(dt);
+        final isWeekend = dt.weekday == 6 || dt.weekday == 7;
+        final checkInStr = times['checkIn']?.toString() ?? '-';
+        final checkOutStr = times['checkOut']?.toString() ?? '-';
+        final hasCheckIn = checkInStr != '-';
+
+        yearMap[dateOnly.split('-')[0]] = true;
+
         processed.add({
           'date': formattedDate,
           'day': dayName,
+          'shortMonth': shortMonth,
+          'dayNum': dayNum,
           'rawDate': dateOnly,
-          'checkIn': times['checkIn'],
-          'checkOut': times['checkOut'],
+          'checkIn': checkInStr,
+          'checkOut': checkOutStr,
           'status': isWeekend
               ? 'Libur'
               : (hasCheckIn ? 'Tepat Waktu' : 'Tidak Hadir'),
-          'duration': _calculateDuration(times['checkIn']!, times['checkOut']!),
+          'duration': _calculateDuration(checkInStr, checkOutStr),
         });
       } catch (e) {
         debugPrint('Error parsing date "$date": $e');
       }
     });
+
     processed.sort(
       (a, b) => b['rawDate'].toString().compareTo(a['rawDate'].toString()),
     );
-    setState(() {
-      _allData = processed;
-      _isLoading = false;
-    });
+
+    final sortedYears = yearMap.keys.map((y) => y.toString()).toList()..sort();
+
+    if (mounted) {
+      setState(() {
+        _allData
+          ..clear()
+          ..addAll(processed);
+        _yearsList
+          ..clear()
+          ..add('Semua')
+          ..addAll(sortedYears);
+        _applyFilters();
+        _isLoading = false;
+      });
+    }
+  }
+
+  void _applyFilters() {
+    final List<dynamic> result = [];
+    for (final e in _allData) {
+      final raw = e['rawDate'].toString();
+      final parts = raw.split('-');
+      final month = parts.length > 1 ? parts[1] : '';
+      final year = parts.isNotEmpty ? parts[0] : '';
+
+      if (_filterStatus != 'Semua' && e['status'] != _filterStatus) {
+        continue;
+      }
+      if (_filterMonth != 'Semua' && month != _filterMonth) {
+        continue;
+      }
+      if (_filterYear != 'Semua' && year != _filterYear) {
+        continue;
+      }
+      result.add(Map.from(e));
+    }
+    _filteredList
+      ..clear()
+      ..addAll(result);
+    _expandedIndex = -1;
   }
 
   String _calculateDuration(String checkIn, String checkOut) {
     if (checkIn == '-' || checkOut == '-') return '-';
     try {
-      final inParts = checkIn.replaceAll(' WIB', '').split(':');
-      final outParts = checkOut.replaceAll(' WIB', '').split(':');
+      final cleanIn = checkIn
+          .toUpperCase()
+          .replaceAll('WIB', '')
+          .replaceAll('WITA', '')
+          .replaceAll('WIT', '')
+          .replaceAll('.', ':')
+          .trim();
+      final cleanOut = checkOut
+          .toUpperCase()
+          .replaceAll('WIB', '')
+          .replaceAll('WITA', '')
+          .replaceAll('WIT', '')
+          .replaceAll('.', ':')
+          .trim();
+
+      final inParts = cleanIn.split(':');
+      final outParts = cleanOut.split(':');
       final inMin = int.parse(inParts[0]) * 60 + int.parse(inParts[1]);
       final outMin = int.parse(outParts[0]) * 60 + int.parse(outParts[1]);
       final diff = outMin - inMin;
       if (diff < 0) return '-';
       return '${diff ~/ 60}j ${diff % 60}m';
-    } catch (e) {
+    } catch (_) {
       return '-';
     }
-  }
-
-  List<String> get _availableYears {
-    final years =
-        _allData
-            .map((e) => e['rawDate'].toString().split('-')[0])
-            .toSet()
-            .toList()
-          ..sort();
-    return ['Semua', ...years];
-  }
-
-  List<Map<String, dynamic>> get _filtered {
-    return _allData.where((e) {
-      final raw = e['rawDate'].toString();
-      final parts = raw.split('-');
-      final month = parts.length > 1 ? parts[1] : '';
-      final year = parts.isNotEmpty ? parts[0] : '';
-      if (_filterStatus != 'Semua' && e['status'] != _filterStatus) {
-        return false;
-      }
-      if (_filterMonth != 'Semua' && month != _filterMonth) {
-        return false;
-      }
-      if (_filterYear != 'Semua' && year != _filterYear) {
-        return false;
-      }
-      return true;
-    }).toList();
   }
 
   int get _activeFilterCount {
@@ -165,603 +193,1368 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
     return c;
   }
 
-  void _resetFilter() {
+  String get _periodLabel {
+    if (_filterMonth == 'Semua' && _filterYear == 'Semua') {
+      return 'Semua Periode';
+    }
+    String mLabel = '';
+    if (_filterMonth != 'Semua') {
+      for (final item in _monthItems) {
+        if (item['code'] == _filterMonth) {
+          mLabel = item['full'] ?? '';
+          break;
+        }
+      }
+    }
+    final yLabel = _filterYear == 'Semua' ? '' : _filterYear;
+    return '$mLabel $yLabel'.trim();
+  }
+
+  void _selectQuickPreset(String preset) {
+    HapticFeedback.selectionClick();
+    final now = DateTime.now();
     setState(() {
-      _filterStatus = 'Semua';
-      _filterMonth = 'Semua';
-      _filterYear = 'Semua';
+      if (preset == 'all') {
+        _filterMonth = 'Semua';
+        _filterYear = 'Semua';
+      } else if (preset == 'this_month') {
+        _filterMonth = now.month.toString().padLeft(2, '0');
+        _filterYear = now.year.toString();
+      } else if (preset == 'last_month') {
+        final prev = DateTime(now.year, now.month - 1, 1);
+        _filterMonth = prev.month.toString().padLeft(2, '0');
+        _filterYear = prev.year.toString();
+      }
+      _applyFilters();
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    final filtered = _filtered;
-    return Scaffold(
-      backgroundColor: AppTheme.backgroundColor,
-      body: CustomScrollView(
-        slivers: [
-          SliverAppBar(
-            expandedHeight: 180,
-            pinned: true,
-            backgroundColor: AppTheme.primaryColor,
-            foregroundColor: Colors.white,
-            actions: [
-              ExportMenuButton(
-                onCsv: (ctx) => ExportService.exportAttendanceCsv(
-                  ctx,
-                  filtered,
-                  DatabaseService().getCurrentUser()?['name']?.toString() ??
-                      'Karyawan',
-                ),
-                onPdf: (ctx) => ExportService.exportAttendancePdf(
-                  ctx,
-                  filtered,
-                  DatabaseService().getCurrentUser()?['name']?.toString() ??
-                      'Karyawan',
-                ),
-              ),
-            ],
-            flexibleSpace: FlexibleSpaceBar(
-              background: Container(
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [Color(0xFF0B4A2E), Color(0xFF10B981)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
+    final userName =
+        DatabaseService().getCurrentUser()?['name']?.toString() ?? 'Karyawan';
+
+    final total = _filteredList.length;
+    final hadir = _filteredList
+        .where((d) => d['status'] == 'Tepat Waktu')
+        .length;
+    final libur = _filteredList.where((d) => d['status'] == 'Libur').length;
+    final tidakHadir = _filteredList
+        .where((d) => d['status'] == 'Tidak Hadir')
+        .length;
+
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle.light,
+      child: Scaffold(
+        backgroundColor: const Color(0xFFDCE4EC),
+        body: RefreshIndicator(
+          color: AppTheme.primaryColor,
+          onRefresh: _loadAttendanceHistory,
+          child: CustomScrollView(
+            slivers: [
+              // 1. Header Hijau Solid Korporat Bersih (Tanpa Gradient)
+              SliverToBoxAdapter(
+                child: Container(
+                  width: double.infinity,
+                  decoration: const BoxDecoration(
+                    color: AppTheme.primaryColor,
+                    borderRadius: BorderRadius.vertical(
+                      bottom: Radius.circular(28),
+                    ),
                   ),
-                ),
-                child: SafeArea(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 48, 20, 20),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.18),
-                                borderRadius: BorderRadius.circular(14),
+                  padding: EdgeInsets.fromLTRB(
+                    18,
+                    MediaQuery.of(context).padding.top + 12,
+                    14,
+                    22,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: AppTheme.accentColor.withValues(
+                                alpha: 0.16,
                               ),
-                              child: const Icon(
-                                Icons.history_rounded,
-                                size: 28,
+                              borderRadius: BorderRadius.circular(13),
+                              border: Border.all(
+                                color: AppTheme.accentColor.withValues(
+                                  alpha: 0.45,
+                                ),
                               ),
                             ),
-                            const SizedBox(width: 14),
-                            const Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'History Presensi',
-                                    style: TextStyle(
-                                      fontSize: 22,
-                                      fontWeight: FontWeight.bold,
+                            child: const Icon(
+                              Icons.receipt_long_rounded,
+                              size: 22,
+                              color: AppTheme.accentColor,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'History Presensi',
+                                  style: TextStyle(
+                                    fontSize: 19,
+                                    fontWeight: FontWeight.w800,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  '$_periodLabel • $total catatan',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppTheme.accentColor.withValues(
+                                      alpha: 0.92,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Theme(
+                            data: Theme.of(context).copyWith(
+                              iconTheme: const IconThemeData(
+                                color: Colors.white,
+                              ),
+                            ),
+                            child: ExportMenuButton(
+                              onCsv: (ctx) async {
+                                final exportRows = [
+                                  for (final e in _filteredList)
+                                    {
+                                      for (final entry in (e as Map).entries)
+                                        entry.key.toString(): entry.value,
+                                    },
+                                ];
+                                await ExportService.exportAttendanceCsv(
+                                  ctx,
+                                  exportRows,
+                                  userName,
+                                );
+                              },
+                              onPdf: (ctx) async {
+                                final exportRows = [
+                                  for (final e in _filteredList)
+                                    {
+                                      for (final entry in (e as Map).entries)
+                                        entry.key.toString(): entry.value,
+                                    },
+                                ];
+                                await ExportService.exportAttendancePdf(
+                                  ctx,
+                                  exportRows,
+                                  userName,
+                                );
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 18),
+                      _darkSegmentedGauge(
+                        total: total,
+                        hadir: hadir,
+                        libur: libur,
+                        tidakHadir: tidakHadir,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              // 2. Filter Hub + Ledger List
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Toggle Button Bar untuk Sembunyikan/Tampilkan Filter
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                width: 4,
+                                height: 16,
+                                decoration: BoxDecoration(
+                                  color: AppTheme.primaryColor,
+                                  borderRadius: BorderRadius.circular(2),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              const Text(
+                                'Filter',
+                                style: TextStyle(
+                                  fontSize: 14.5,
+                                  fontWeight: FontWeight.w800,
+                                  color: AppTheme.textPrimary,
+                                ),
+                              ),
+                              if (_activeFilterCount > 0) ...[
+                                const SizedBox(width: 6),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.primaryColor,
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: Text(
+                                    '$_activeFilterCount',
+                                    style: const TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w800,
                                       color: Colors.white,
                                     ),
                                   ),
-                                  Text(
-                                    'Riwayat absensi harian',
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      color: Colors.white70,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 14),
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 10,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.16),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Row(
-                            children: [
-                              const Icon(
-                                Icons.calendar_month_rounded,
-                                size: 16,
-                                color: Colors.white,
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  '${filtered.length} dari ${_allData.length} hari',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                  ),
                                 ),
-                              ),
+                              ],
                             ],
                           ),
+                          TextButton.icon(
+                            onPressed: () {
+                              HapticFeedback.lightImpact();
+                              setState(() {
+                                _isFilterHubVisible = !_isFilterHubVisible;
+                              });
+                            },
+                            style: TextButton.styleFrom(
+                              foregroundColor: AppTheme.primaryColor,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 4,
+                              ),
+                            ),
+                            icon: Icon(
+                              _isFilterHubVisible
+                                  ? Icons.visibility_off_rounded
+                                  : Icons.visibility_rounded,
+                              size: 16,
+                            ),
+                            label: Text(
+                              _isFilterHubVisible ? 'Sembunyikan' : 'Tampilkan',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 8),
+
+                      // Animated Collapse/Expand Filter Card
+                      AnimatedSize(
+                        duration: const Duration(milliseconds: 260),
+                        curve: Curves.easeOutCubic,
+                        child: _isFilterHubVisible
+                            ? Padding(
+                                padding: const EdgeInsets.only(bottom: 16),
+                                child: _interactiveFilterHub(),
+                              )
+                            : const SizedBox.shrink(),
+                      ),
+
+                      // Section Label Catatan Harian
+                      Row(
+                        children: [
+                          Container(
+                            width: 4,
+                            height: 16,
+                            decoration: BoxDecoration(
+                              color: AppTheme.primaryColor,
+                              borderRadius: BorderRadius.circular(2),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          const Text(
+                            'Catatan Harian',
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w800,
+                              color: AppTheme.textPrimary,
+                            ),
+                          ),
+                          const Spacer(),
+                          const Text(
+                            'Ketuk baris untuk rincian',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: AppTheme.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 12),
+
+                      if (_isLoading)
+                        const Center(
+                          child: Padding(
+                            padding: EdgeInsets.all(42),
+                            child: CircularProgressIndicator(
+                              color: AppTheme.primaryColor,
+                            ),
+                          ),
+                        )
+                      else if (_filteredList.isEmpty)
+                        _emptyStateCard()
+                      else
+                        Column(
+                          children: [
+                            for (
+                              int index = 0;
+                              index < _filteredList.length;
+                              index++
+                            )
+                              _AnimatedEntry(
+                                delayMs: 100 + ((index > 8 ? 8 : index) * 45),
+                                child: _richAccordionCard(
+                                  record: _filteredList[index],
+                                  index: index,
+                                ),
+                              ),
+                          ],
                         ),
-                      ],
-                    ),
+                    ],
                   ),
                 ),
               ),
-            ),
+            ],
           ),
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildCollapsibleFilter(),
-                  const SizedBox(height: 20),
-                  _statsCard(filtered),
-                  const SizedBox(height: 20),
-                  const Text(
-                    'Riwayat Presensi',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: AppTheme.textPrimary,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  if (_isLoading)
-                    const Center(
-                      child: Padding(
-                        padding: EdgeInsets.all(32),
-                        child: CircularProgressIndicator(),
-                      ),
-                    )
-                  else if (filtered.isEmpty)
-                    const Center(
-                      child: Padding(
-                        padding: EdgeInsets.all(32),
-                        child: Text(
-                          'Tidak ada data sesuai filter',
-                          style: TextStyle(color: AppTheme.textSecondary),
-                        ),
-                      ),
-                    )
-                  else
-                    ...filtered.map((record) => _historyCard(record)),
-                ],
-              ),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
 
-  Widget _buildCollapsibleFilter() {
+  Widget _interactiveFilterHub() {
+    int countAll = 0;
+    int countHadir = 0;
+    int countLibur = 0;
+    int countAbsen = 0;
+
+    for (final e in _allData) {
+      final raw = e['rawDate'].toString();
+      final parts = raw.split('-');
+      final month = parts.length > 1 ? parts[1] : '';
+      final year = parts.isNotEmpty ? parts[0] : '';
+
+      if (_filterMonth != 'Semua' && month != _filterMonth) continue;
+      if (_filterYear != 'Semua' && year != _filterYear) continue;
+
+      countAll++;
+      final st = e['status'].toString();
+      if (st == 'Tepat Waktu') countHadir++;
+      if (st == 'Libur') countLibur++;
+      if (st == 'Tidak Hadir') countAbsen++;
+    }
+
+    final statusOptions = [
+      {
+        'label': 'Semua',
+        'count': countAll,
+        'icon': Icons.apps_rounded,
+        'color': AppTheme.primaryColor,
+      },
+      {
+        'label': 'Tepat Waktu',
+        'count': countHadir,
+        'icon': Icons.verified_rounded,
+        'color': AppTheme.successColor,
+      },
+      {
+        'label': 'Libur',
+        'count': countLibur,
+        'icon': Icons.weekend_rounded,
+        'color': const Color(0xFFD97706),
+      },
+      {
+        'label': 'Tidak Hadir',
+        'count': countAbsen,
+        'icon': Icons.cancel_rounded,
+        'color': AppTheme.errorColor,
+      },
+    ];
+
+    final now = DateTime.now();
+    final thisMonthCode = now.month.toString().padLeft(2, '0');
+    final thisYearCode = now.year.toString();
+    final prevDate = DateTime(now.year, now.month - 1, 1);
+    final prevMonthCode = prevDate.month.toString().padLeft(2, '0');
+    final prevYearCode = prevDate.year.toString();
+
+    final isAllPreset = _filterMonth == 'Semua' && _filterYear == 'Semua';
+    final isThisMonthPreset =
+        _filterMonth == thisMonthCode && _filterYear == thisYearCode;
+    final isLastMonthPreset =
+        _filterMonth == prevMonthCode && _filterYear == prevYearCode;
+
     return Container(
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFC2CFDD), width: 1.2),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
+            color: const Color(0xFF0F172A).withValues(alpha: 0.06),
             blurRadius: 12,
             offset: const Offset(0, 4),
           ),
         ],
       ),
       child: Column(
-        children: [
-          InkWell(
-            onTap: () => setState(() => _isFilterExpanded = !_isFilterExpanded),
-            borderRadius: BorderRadius.circular(16),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: AppTheme.primaryColor.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: const Icon(
-                      Icons.tune_rounded,
-                      color: AppTheme.primaryColor,
-                      size: 20,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  const Expanded(
-                    child: Text(
-                      'Filter',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 15,
-                      ),
-                    ),
-                  ),
-                  if (_activeFilterCount > 0)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppTheme.accentColor,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Text(
-                        '$_activeFilterCount aktif',
-                        style: const TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                          color: AppTheme.primaryColor,
-                        ),
-                      ),
-                    ),
-                  const SizedBox(width: 8),
-                  AnimatedRotation(
-                    turns: _isFilterExpanded ? 0.5 : 0,
-                    duration: const Duration(milliseconds: 200),
-                    child: const Icon(
-                      Icons.expand_more_rounded,
-                      color: AppTheme.textSecondary,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          AnimatedCrossFade(
-            firstChild: const SizedBox.shrink(),
-            secondChild: _buildFilterContent(),
-            crossFadeState: _isFilterExpanded
-                ? CrossFadeState.showSecond
-                : CrossFadeState.showFirst,
-            duration: const Duration(milliseconds: 250),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildFilterContent() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Divider(height: 1),
-          const SizedBox(height: 16),
-          const Text(
-            'Status',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
-              color: AppTheme.textSecondary,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: ['Semua', 'Tepat Waktu', 'Libur', 'Tidak Hadir'].map((s) {
-              final selected = _filterStatus == s;
-              return ChoiceChip(
-                label: Text(s),
-                selected: selected,
-                onSelected: (_) => setState(() => _filterStatus = s),
-                selectedColor: AppTheme.primaryColor,
-                labelStyle: TextStyle(
-                  color: selected ? Colors.white : AppTheme.textPrimary,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                ),
-                backgroundColor: const Color(0xFFF1F5F9),
-                side: BorderSide.none,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(20),
-                ),
-              );
-            }).toList(),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Bulan',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        color: AppTheme.textSecondary,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF1F5F9),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: DropdownButton<String>(
-                        value: _filterMonth,
-                        isExpanded: true,
-                        underline: const SizedBox(),
-                        items: _months.map((m) {
-                          final label = m == 'Semua'
-                              ? 'Semua Bulan'
-                              : _monthNames[int.parse(m) - 1];
-                          return DropdownMenuItem(
-                            value: m,
-                            child: Text(
-                              label,
-                              style: const TextStyle(fontSize: 13),
-                            ),
-                          );
-                        }).toList(),
-                        onChanged: (v) =>
-                            setState(() => _filterMonth = v ?? 'Semua'),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Tahun',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        color: AppTheme.textSecondary,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF1F5F9),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: DropdownButton<String>(
-                        value: _filterYear,
-                        isExpanded: true,
-                        underline: const SizedBox(),
-                        items: _availableYears.map((y) {
-                          return DropdownMenuItem(
-                            value: y,
-                            child: Text(
-                              y == 'Semua' ? 'Semua Tahun' : y,
-                              style: const TextStyle(fontSize: 13),
-                            ),
-                          );
-                        }).toList(),
-                        onChanged: (v) =>
-                            setState(() => _filterYear = v ?? 'Semua'),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: _resetFilter,
-              icon: const Icon(Icons.refresh_rounded, size: 16),
-              label: const Text('Reset Filter'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AppTheme.primaryColor,
-                side: const BorderSide(color: AppTheme.primaryColor),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _statsCard(List<Map<String, dynamic>> data) {
-    final total = data.length;
-    final hadir = data.where((d) => d['status'] == 'Tepat Waktu').length;
-    final libur = data.where((d) => d['status'] == 'Libur').length;
-    final tidakHadir = data.where((d) => d['status'] == 'Tidak Hadir').length;
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFF0B4A2E), Color(0xFF10B981)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Statistik',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 15,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              _StatCard(
-                label: 'Total',
-                value: '$total',
-                color: AppTheme.primaryColor,
-              ),
-              const SizedBox(width: 10),
-              _StatCard(
-                label: 'Hadir',
-                value: '$hadir',
-                color: AppTheme.successColor,
-              ),
-              const SizedBox(width: 10),
-              _StatCard(
-                label: 'Libur',
-                value: '$libur',
-                color: const Color(0xFFD97706),
-              ),
-              const SizedBox(width: 10),
-              _StatCard(
-                label: 'Tidak Hadir',
-                value: '$tidakHadir',
-                color: AppTheme.errorColor,
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _historyCard(Map<String, dynamic> record) {
-    final isLibur = record['status'] == 'Libur';
-    final isTidakHadir = record['status'] == 'Tidak Hadir';
-    final color = isLibur
-        ? AppTheme.textSecondary
-        : (isTidakHadir ? AppTheme.errorColor : AppTheme.successColor);
-    final icon = isLibur
-        ? Icons.weekend_rounded
-        : (isTidakHadir ? Icons.cancel_rounded : Icons.check_circle_rounded);
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Row(
         children: [
           Container(
-            width: 50,
-            height: 50,
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(12),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+            decoration: const BoxDecoration(
+              color: Color(0xFFE9EFF5),
+              border: Border(bottom: BorderSide(color: Color(0xFFD0DCE8))),
             ),
-            child: Icon(icon, color: color, size: 24),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: AppTheme.primaryColor,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(
+                    Icons.filter_alt_rounded,
+                    size: 14,
+                    color: AppTheme.accentColor,
+                  ),
+                ),
+                const SizedBox(width: 9),
+                const Text(
+                  'Menu Filter',
+                  style: TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w800,
+                    color: AppTheme.textPrimary,
+                  ),
+                ),
+                const Spacer(),
+                if (_activeFilterCount > 0)
+                  GestureDetector(
+                    onTap: () {
+                      HapticFeedback.lightImpact();
+                      setState(() {
+                        _filterStatus = 'Semua';
+                        _filterMonth = 'Semua';
+                        _filterYear = 'Semua';
+                        _applyFilters();
+                      });
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppTheme.errorColor.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(7),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.restart_alt_rounded,
+                            size: 13,
+                            color: AppTheme.errorColor,
+                          ),
+                          SizedBox(width: 3),
+                          Text(
+                            'Reset',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                              color: AppTheme.errorColor,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            ),
           ),
-          const SizedBox(width: 14),
-          Expanded(
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        '${record['day']}, ${record['date']}',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13,
-                          color: AppTheme.textPrimary,
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: statusOptions.map((item) {
+                      final label = item['label'].toString();
+                      final count = item['count'] as int;
+                      final icon = item['icon'] as IconData;
+                      final chipColor = item['color'] as Color;
+                      final active = _filterStatus == label;
+
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: GestureDetector(
+                          onTap: () {
+                            HapticFeedback.selectionClick();
+                            setState(() {
+                              _filterStatus = label;
+                              _applyFilters();
+                            });
+                          },
+                          child: AnimatedScale(
+                            scale: active ? 1.0 : 0.97,
+                            duration: const Duration(milliseconds: 160),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 200),
+                              curve: Curves.easeOutCubic,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 11,
+                                vertical: 8,
+                              ),
+                              decoration: BoxDecoration(
+                                color: active ? chipColor : Colors.white,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: active
+                                      ? chipColor
+                                      : const Color(0xFFCBD5E1),
+                                  width: 1.2,
+                                ),
+                                boxShadow: active
+                                    ? [
+                                        BoxShadow(
+                                          color: chipColor.withValues(
+                                            alpha: 0.28,
+                                          ),
+                                          blurRadius: 8,
+                                          offset: const Offset(0, 3),
+                                        ),
+                                      ]
+                                    : null,
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    icon,
+                                    size: 14,
+                                    color: active ? Colors.white : chipColor,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    label,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w800,
+                                      color: active
+                                          ? Colors.white
+                                          : AppTheme.textPrimary,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                      vertical: 1.5,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: active
+                                          ? Colors.white.withValues(alpha: 0.22)
+                                          : chipColor.withValues(alpha: 0.12),
+                                      borderRadius: BorderRadius.circular(7),
+                                    ),
+                                    child: Text(
+                                      '$count',
+                                      style: TextStyle(
+                                        fontSize: 10.5,
+                                        fontWeight: FontWeight.w800,
+                                        color: active
+                                            ? Colors.white
+                                            : chipColor,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
                         ),
-                      ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    _presetChip(
+                      label: 'Semua',
+                      active: isAllPreset,
+                      onTap: () => _selectQuickPreset('all'),
                     ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        color: color.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Text(
-                        record['status'].toString(),
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                          color: color,
+                    const SizedBox(width: 6),
+                    _presetChip(
+                      label: 'Bulan Ini',
+                      active: isThisMonthPreset,
+                      onTap: () => _selectQuickPreset('this_month'),
+                    ),
+                    const SizedBox(width: 6),
+                    _presetChip(
+                      label: 'Bulan Lalu',
+                      active: isLastMonthPreset,
+                      onTap: () => _selectQuickPreset('last_month'),
+                    ),
+                    const Spacer(),
+                    GestureDetector(
+                      onTap: () {
+                        HapticFeedback.lightImpact();
+                        setState(() {
+                          _isPeriodPanelOpen = !_isPeriodPanelOpen;
+                        });
+                      },
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 7,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _isPeriodPanelOpen
+                              ? AppTheme.primaryColor
+                              : const Color(0xFFE7EEF6),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: _isPeriodPanelOpen
+                                ? AppTheme.primaryColor
+                                : const Color(0xFFC2CFDD),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.calendar_view_month_rounded,
+                              size: 14,
+                              color: _isPeriodPanelOpen
+                                  ? AppTheme.accentColor
+                                  : AppTheme.primaryColor,
+                            ),
+                            const SizedBox(width: 5),
+                            Text(
+                              'Pilih Bulan',
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w800,
+                                color: _isPeriodPanelOpen
+                                    ? Colors.white
+                                    : AppTheme.primaryColor,
+                              ),
+                            ),
+                            const SizedBox(width: 2),
+                            AnimatedRotation(
+                              turns: _isPeriodPanelOpen ? 0.5 : 0.0,
+                              duration: const Duration(milliseconds: 200),
+                              child: Icon(
+                                Icons.keyboard_arrow_down_rounded,
+                                size: 16,
+                                color: _isPeriodPanelOpen
+                                    ? Colors.white
+                                    : AppTheme.primaryColor,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
                   ],
                 ),
-                if (!isLibur) ...[
-                  const SizedBox(height: 8),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Row(
-                        children: [
-                          const Icon(
-                            Icons.login_rounded,
-                            size: 14,
-                            color: AppTheme.successColor,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            record['checkIn'].toString(),
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: AppTheme.textSecondary,
+                AnimatedSize(
+                  duration: const Duration(milliseconds: 260),
+                  curve: Curves.easeOutCubic,
+                  child: _isPeriodPanelOpen
+                      ? Container(
+                          margin: const EdgeInsets.only(top: 12),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF0E3E29),
+                            borderRadius: BorderRadius.circular(15),
+                            border: Border.all(
+                              color: AppTheme.accentColor.withValues(
+                                alpha: 0.35,
+                              ),
                             ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  const Icon(
+                                    Icons.event_note_rounded,
+                                    size: 14,
+                                    color: AppTheme.accentColor,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  const Text(
+                                    'Tahun:',
+                                    style: TextStyle(
+                                      fontSize: 11.5,
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: SingleChildScrollView(
+                                      scrollDirection: Axis.horizontal,
+                                      child: Row(
+                                        children: _yearsList.map((y) {
+                                          final selected = _filterYear == y;
+                                          return Padding(
+                                            padding: const EdgeInsets.only(
+                                              right: 6,
+                                            ),
+                                            child: GestureDetector(
+                                              onTap: () {
+                                                HapticFeedback.selectionClick();
+                                                setState(() {
+                                                  _filterYear = y;
+                                                  _applyFilters();
+                                                });
+                                              },
+                                              child: AnimatedContainer(
+                                                duration: const Duration(
+                                                  milliseconds: 160,
+                                                ),
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 10,
+                                                      vertical: 4,
+                                                    ),
+                                                decoration: BoxDecoration(
+                                                  color: selected
+                                                      ? AppTheme.accentColor
+                                                      : Colors.white.withValues(
+                                                          alpha: 0.1,
+                                                        ),
+                                                  borderRadius:
+                                                      BorderRadius.circular(8),
+                                                ),
+                                                child: Text(
+                                                  y,
+                                                  style: TextStyle(
+                                                    fontSize: 11.5,
+                                                    fontWeight: FontWeight.w800,
+                                                    color: selected
+                                                        ? AppTheme.primaryColor
+                                                        : Colors.white,
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          );
+                                        }).toList(),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 11),
+                              GridView.count(
+                                shrinkWrap: true,
+                                physics: const NeverScrollableScrollPhysics(),
+                                crossAxisCount: 4,
+                                mainAxisSpacing: 7,
+                                crossAxisSpacing: 7,
+                                childAspectRatio: 2.35,
+                                children: _monthItems.map((m) {
+                                  final code = m['code'].toString();
+                                  final shortLabel = m['short'].toString();
+                                  final selected = _filterMonth == code;
+
+                                  return GestureDetector(
+                                    onTap: () {
+                                      HapticFeedback.selectionClick();
+                                      setState(() {
+                                        _filterMonth = selected
+                                            ? 'Semua'
+                                            : code;
+                                        _applyFilters();
+                                      });
+                                    },
+                                    child: AnimatedContainer(
+                                      duration: const Duration(
+                                        milliseconds: 170,
+                                      ),
+                                      alignment: Alignment.center,
+                                      decoration: BoxDecoration(
+                                        color: selected
+                                            ? AppTheme.accentColor
+                                            : Colors.black.withValues(
+                                                alpha: 0.25,
+                                              ),
+                                        borderRadius: BorderRadius.circular(9),
+                                        border: Border.all(
+                                          color: selected
+                                              ? AppTheme.accentColor
+                                              : Colors.white.withValues(
+                                                  alpha: 0.14,
+                                                ),
+                                        ),
+                                      ),
+                                      child: Text(
+                                        shortLabel,
+                                        style: TextStyle(
+                                          fontSize: 11.5,
+                                          fontWeight: FontWeight.w800,
+                                          letterSpacing: 0.5,
+                                          color: selected
+                                              ? AppTheme.primaryColor
+                                              : Colors.white.withValues(
+                                                  alpha: 0.88,
+                                                ),
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                }).toList(),
+                              ),
+                            ],
+                          ),
+                        )
+                      : const SizedBox.shrink(),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _presetChip({
+    required String label,
+    required bool active,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 170),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6.5),
+        decoration: BoxDecoration(
+          color: active
+              ? AppTheme.primaryColor.withValues(alpha: 0.12)
+              : Colors.white,
+          borderRadius: BorderRadius.circular(9),
+          border: Border.all(
+            color: active ? AppTheme.primaryColor : const Color(0xFFCBD5E1),
+            width: active ? 1.3 : 1.0,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 11.5,
+            fontWeight: FontWeight.w800,
+            color: active ? AppTheme.primaryColor : AppTheme.textSecondary,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _darkSegmentedGauge({
+    required int total,
+    required int hadir,
+    required int libur,
+    required int tidakHadir,
+  }) {
+    final safeTotal = total == 0 ? 1 : total;
+    final hadirFlex = total == 0 ? 1 : (hadir * 100 ~/ safeTotal).clamp(0, 100);
+    final liburFlex = total == 0 ? 0 : (libur * 100 ~/ safeTotal).clamp(0, 100);
+    final absenFlex = total == 0
+        ? 0
+        : (tidakHadir * 100 ~/ safeTotal).clamp(0, 100);
+
+    final int rate = (hadir + tidakHadir) == 0
+        ? 100
+        : ((hadir * 100) ~/ (hadir + tidakHadir));
+
+    return Container(
+      padding: const EdgeInsets.all(15),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.24),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: AppTheme.accentColor.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                'Tingkat Kedisiplinan',
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white.withValues(alpha: 0.85),
+                ),
+              ),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+                decoration: BoxDecoration(
+                  color: AppTheme.accentColor,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  '$rate% Hadir',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    color: AppTheme.primaryColor,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 11),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: SizedBox(
+              height: 9,
+              child: total == 0
+                  ? Container(color: Colors.white.withValues(alpha: 0.16))
+                  : Row(
+                      children: [
+                        if (hadirFlex > 0)
+                          Expanded(
+                            flex: hadirFlex,
+                            child: Container(color: const Color(0xFF34D399)),
+                          ),
+                        if (liburFlex > 0)
+                          Expanded(
+                            flex: liburFlex,
+                            child: Container(color: AppTheme.accentColor),
+                          ),
+                        if (absenFlex > 0)
+                          Expanded(
+                            flex: absenFlex,
+                            child: Container(color: const Color(0xFFF87171)),
+                          ),
+                      ],
+                    ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              _darkLegend('Total', '$total', Colors.white),
+              _darkLegend('Hadir', '$hadir', const Color(0xFF34D399)),
+              _darkLegend('Libur', '$libur', AppTheme.accentColor),
+              _darkLegend('Absen', '$tidakHadir', const Color(0xFFF87171)),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _darkLegend(String label, String value, Color dotColor) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(color: dotColor, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 5),
+        Text(
+          '$label ',
+          style: TextStyle(
+            fontSize: 11,
+            color: Colors.white.withValues(alpha: 0.78),
+          ),
+        ),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 12.5,
+            fontWeight: FontWeight.w800,
+            color: dotColor,
+            fontFeatures: const [FontFeature.tabularFigures()],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _richAccordionCard({required Map record, required int index}) {
+    final bool isExpanded = _expandedIndex == index;
+    final status = record['status'].toString();
+    final isLibur = status == 'Libur';
+    final isTidakHadir = status == 'Tidak Hadir';
+
+    final accentColor = isLibur
+        ? const Color(0xFFD97706)
+        : (isTidakHadir ? AppTheme.errorColor : AppTheme.successColor);
+    final headerTint = isLibur
+        ? const Color(0xFFFEF6E4)
+        : (isTidakHadir ? const Color(0xFFFEECEC) : const Color(0xFFE7F7F0));
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 11),
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: const Color(0xFFFDFEFE),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isExpanded
+              ? accentColor.withValues(alpha: 0.65)
+              : const Color(0xFFC5D1DE),
+          width: isExpanded ? 1.4 : 1.1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF0F172A).withValues(alpha: 0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(width: 6, color: accentColor),
+            Expanded(
+              child: Column(
+                children: [
+                  InkWell(
+                    onTap: () {
+                      setState(() {
+                        _expandedIndex = isExpanded ? -1 : index;
+                      });
+                    },
+                    child: Container(
+                      color: isExpanded ? headerTint : Colors.transparent,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 13,
+                        vertical: 12,
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 46,
+                            height: 48,
+                            decoration: BoxDecoration(
+                              color: headerTint,
+                              borderRadius: BorderRadius.circular(11),
+                              border: Border.all(
+                                color: accentColor.withValues(alpha: 0.35),
+                              ),
+                            ),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text(
+                                  record['dayNum'].toString(),
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w800,
+                                    height: 1.05,
+                                    color: accentColor,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  record['shortMonth'].toString(),
+                                  style: TextStyle(
+                                    fontSize: 9.5,
+                                    fontWeight: FontWeight.w800,
+                                    color: accentColor,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  record['day'].toString(),
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w800,
+                                    color: AppTheme.textPrimary,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                if (isLibur)
+                                  const Text(
+                                    'Akhir Pekan • Libur',
+                                    style: TextStyle(
+                                      fontSize: 11.5,
+                                      fontWeight: FontWeight.w600,
+                                      color: Color(0xFFB45309),
+                                    ),
+                                  )
+                                else
+                                  Row(
+                                    children: [
+                                      Icon(
+                                        Icons.login_rounded,
+                                        size: 13,
+                                        color: accentColor,
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        record['checkIn'].toString(),
+                                        style: const TextStyle(
+                                          fontSize: 11.5,
+                                          fontWeight: FontWeight.w700,
+                                          color: AppTheme.textPrimary,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      const Icon(
+                                        Icons.logout_rounded,
+                                        size: 13,
+                                        color: AppTheme.textSecondary,
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Expanded(
+                                        child: Text(
+                                          record['checkOut'].toString(),
+                                          style: const TextStyle(
+                                            fontSize: 11.5,
+                                            fontWeight: FontWeight.w700,
+                                            color: AppTheme.textSecondary,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 9,
+                                  vertical: 3.5,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: accentColor,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(
+                                  status,
+                                  style: const TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w800,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 5),
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (!isLibur)
+                                    Text(
+                                      record['duration'].toString(),
+                                      style: const TextStyle(
+                                        fontSize: 11.5,
+                                        fontWeight: FontWeight.w800,
+                                        color: AppTheme.primaryColor,
+                                      ),
+                                    ),
+                                  const SizedBox(width: 2),
+                                  AnimatedRotation(
+                                    turns: isExpanded ? 0.5 : 0.0,
+                                    duration: const Duration(milliseconds: 200),
+                                    child: const Icon(
+                                      Icons.keyboard_arrow_down_rounded,
+                                      size: 18,
+                                      color: AppTheme.textSecondary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
                           ),
                         ],
                       ),
-                      Row(
-                        children: [
-                          const Icon(
-                            Icons.logout_rounded,
-                            size: 14,
-                            color: AppTheme.textSecondary,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            record['checkOut'].toString(),
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: AppTheme.textSecondary,
+                    ),
+                  ),
+                  AnimatedSize(
+                    duration: const Duration(milliseconds: 240),
+                    curve: Curves.easeOutCubic,
+                    child: isExpanded
+                        ? Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.fromLTRB(13, 11, 13, 13),
+                            decoration: const BoxDecoration(
+                              color: Color(0xFFEEF3F8),
+                              border: Border(
+                                top: BorderSide(color: Color(0xFFD5DFEA)),
+                              ),
                             ),
-                          ),
-                        ],
-                      ),
-                      Text(
-                        record['duration'].toString(),
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
-                          color: AppTheme.textPrimary,
-                        ),
-                      ),
-                    ],
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Tanggal Lengkap: ${record['date']}',
+                                  style: const TextStyle(
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppTheme.textPrimary,
+                                  ),
+                                ),
+                                const SizedBox(height: 9),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: _detailTile(
+                                        'Masuk',
+                                        record['checkIn'].toString(),
+                                        AppTheme.successColor,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: _detailTile(
+                                        'Pulang',
+                                        record['checkOut'].toString(),
+                                        AppTheme.primaryColor,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: _detailTile(
+                                        'Durasi',
+                                        record['duration'].toString(),
+                                        const Color(0xFFB45309),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          )
+                        : const SizedBox.shrink(),
                   ),
                 ],
-              ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _detailTile(String label, String value, Color accent) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: accent.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+              color: AppTheme.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+              color: accent,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _emptyStateCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(28),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFC5D1DE)),
+      ),
+      child: Column(
+        children: [
+          const Icon(
+            Icons.inbox_rounded,
+            size: 38,
+            color: AppTheme.textSecondary,
+          ),
+          const SizedBox(height: 10),
+          const Text(
+            'Belum ada catatan presensi pada filter ini.',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: AppTheme.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextButton.icon(
+            onPressed: () {
+              setState(() {
+                _filterStatus = 'Semua';
+                _filterMonth = 'Semua';
+                _filterYear = 'Semua';
+                _applyFilters();
+              });
+            },
+            icon: const Icon(Icons.refresh_rounded, size: 16),
+            label: const Text(
+              'Reset Semua Filter',
+              style: TextStyle(fontWeight: FontWeight.w700),
             ),
           ),
         ],
@@ -770,47 +1563,38 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
   }
 }
 
-class _StatCard extends StatelessWidget {
-  final String label;
-  final String value;
-  final Color color;
+class _AnimatedEntry extends StatefulWidget {
+  final int delayMs;
+  final Widget child;
+  const _AnimatedEntry({required this.delayMs, required this.child});
 
-  const _StatCard({
-    required this.label,
-    required this.value,
-    required this.color,
-  });
+  @override
+  State<_AnimatedEntry> createState() => _AnimatedEntryState();
+}
+
+class _AnimatedEntryState extends State<_AnimatedEntry> {
+  bool _visible = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final delay = widget.delayMs;
+    Future.delayed(Duration(milliseconds: delay), () {
+      if (mounted) setState(() => _visible = true);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              label,
-              style: const TextStyle(
-                color: AppTheme.textSecondary,
-                fontSize: 10,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              value,
-              style: TextStyle(
-                color: color,
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ],
-        ),
+    return AnimatedOpacity(
+      opacity: _visible ? 1.0 : 0.0,
+      duration: const Duration(milliseconds: 380),
+      curve: Curves.easeOut,
+      child: AnimatedSlide(
+        offset: _visible ? Offset.zero : const Offset(0, 0.04),
+        duration: const Duration(milliseconds: 380),
+        curve: Curves.easeOutCubic,
+        child: widget.child,
       ),
     );
   }

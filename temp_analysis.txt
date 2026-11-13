@@ -1,0 +1,46 @@
+﻿Analyzing erp_gmum_mobile_v2...                                 
+
+   info - 'background' is deprecated and shouldn't be used. Use surface instead. This feature was deprecated after v3.18.0-0.1.pre. Try replacing the use of the deprecated member with the replacement - lib\theme\app_theme.dart:21:7 - deprecated_member_use
+   info - Unnecessary use of multiple underscores. Try using '_' - lib\views\attendance\attendance_screen.dart:700:28 - unnecessary_underscores
+   info - Unnecessary use of multiple underscores. Try using '_' - lib\views\auth\login_screen.dart:35:24 - unnecessary_underscores
+   info - Unnecessary use of multiple underscores. Try using '_' - lib\views\auth\login_screen.dart:35:28 - unnecessary_underscores
+   info - Unnecessary use of multiple underscores. Try using '_' - lib\views\auth\login_screen.dart:79:30 - unnecessary_underscores
+   info - Unnecessary use of multiple underscores. Try using '_' - lib\views\auth\login_screen.dart:79:34 - unnecessary_underscores
+   info - Unnecessary use of multiple underscores. Try using '_' - lib\views\auth\login_screen.dart:80:48 - unnecessary_underscores
+   info - Unnecessary use of multiple underscores. Try using '_' - lib\views\auth\login_screen.dart:141:49 - unnecessary_underscores
+   info - Unnecessary use of multiple underscores. Try using '_' - lib\views\auth\login_screen.dart:141:53 - unnecessary_underscores
+   info - Unnecessary use of multiple underscores. Try using '_' - lib\views\auth\register_screen.dart:69:28 - unnecessary_underscores
+   info - Unnecessary use of multiple underscores. Try using '_' - lib\views\auth\register_screen.dart:69:32 - unnecessary_underscores
+   info - Unnecessary use of multiple underscores. Try using '_' - lib\views\auth\register_screen.dart:70:46 - unnecessary_underscores
+   info - Unnecessary use of multiple underscores. Try using '_' - lib\views\auth\register_screen.dart:179:47 - unnecessary_underscores
+   info - Unnecessary use of multiple underscores. Try using '_' - lib\views\auth\register_screen.dart:179:51 - unnecessary_underscores
+   info - The import of 'dart:typed_data' is unnecessary because all of the used elements are also provided by the import of 'package:flutter/services.dart'. Try removing the import directive - lib\views\home\home_screen.dart:3:8 - unnecessary_import
+   info - Unnecessary use of multiple underscores. Try using '_' - lib\views\home\home_screen.dart:597:33 - unnecessary_underscores
+   info - Statements in an if should be enclosed in a block. Try wrapping the statement in a block - lib\views\leave\leave_form_dialog.dart:226:7 - curly_braces_in_flow_control_structures
+   info - Don't use 'BuildContext's across async gaps. Try rewriting the code to not use the 'BuildContext', or guard the use with a 'mounted' check - lib\views\leave\leave_request_screen.dart:218:23 - use_build_context_synchronously
+   info - Don't use 'BuildContext's across async gaps. Try rewriting the code to not use the 'BuildContext', or guard the use with a 'mounted' check - lib\views\leave\leave_request_screen.dart:229:23 - use_build_context_synchronously
+warning - The operand can't be 'null', so the condition is always 'true'. Remove the condition - lib\views\leave\sick_leave_form_dialog.dart:796:44 - unnecessary_null_comparison
+warning - Unused import: '../../theme/app_theme.dart'. Try removing the import directive - lib\views\leave\sick_leave_history_screen.dart:8:8 - unused_import
+warning - The operand can't be 'null', so the condition is always 'true'. Remove the condition - lib\views\leave\sick_leave_history_screen.dart:797:44 - unnecessary_null_comparison
+   info - Don't use 'BuildContext's across async gaps. Try rewriting the code to not use the 'BuildContext', or guard the use with a 'mounted' check - lib\views\leave\sick_leave_screen.dart:197:23 - use_build_context_synchronously
+   info - Don't use 'BuildContext's across async gaps. Try rewriting the code to not use the 'BuildContext', or guard the use with a 'mounted' check - lib\views\leave\sick_leave_screen.dart:207:23 - use_build_context_synchronously
+  error - The name 'SickLeaveHistoryScreen' isn't a class. Try correcting the name to match an existing class - lib\views\navigation\main_navigation.dart:162:11 - creation_with_non_type
+   info - The type name '_iPhoneStyleNavItem' isn't an UpperCamelCase identifier. Try changing the name to follow the UpperCamelCase style - lib\views\navigation\main_navigation.dart:250:7 - camel_case_types
+   info - The import of 'dart:typed_data' is unnecessary because all of the used elements are also provided by the import of 'package:flutter/services.dart'. Try removing the import directive - lib\views\profile\profile_screen.dart:2:8 - unnecessary_import
+   info - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check. Guard a 'State.context' use with a 'mounted' check on the State, and other BuildContext use with a 'mounted' check on the BuildContext - lib\views\profile\profile_screen.dart:330:29 - use_build_context_synchronously
+   info - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check. Guard a 'State.context' use with a 'mounted' check on the State, and other BuildContext use with a 'mounted' check on the BuildContext - lib\views\profile\profile_screen.dart:332:38 - use_build_context_synchronously
+   info - Unnecessary use of multiple underscores. Try using '_' - lib\views\splash\splash_screen.dart:69:26 - unnecessary_underscores
+   info - Unnecessary use of multiple underscores. Try using '_' - lib\views\splash\splash_screen.dart:69:30 - unnecessary_underscores
+   info - Unnecessary use of multiple underscores. Try using '_' - lib\views\splash\splash_screen.dart:71:44 - unnecessary_underscores
+   info - Unnecessary use of multiple underscores. Try using '_' - lib\views\splash\splash_screen.dart:122:45 - unnecessary_underscores
+   info - Unnecessary use of multiple underscores. Try using '_' - lib\views\splash\splash_screen.dart:122:49 - unnecessary_underscores
+   info - Unnecessary use of multiple underscores. Try using '_' - lib\views\splash\splash_screen.dart:183:47 - unnecessary_underscores
+
+flutter : 35 issues found. (ran in 6.8s)
+At line:1 char:1
++ flutter analyze 2>&1 | Out-File -FilePath temp_analysis.txt -Encoding ...
++ ~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (35 issues found. (ran in 6.8s):St 
+   ring) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 

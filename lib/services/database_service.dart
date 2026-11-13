@@ -17,6 +17,7 @@ class DatabaseService {
   // Sesuaikan host, port, database name, username, dan password dengan server Anda.
   // final String _host = '10.0.2.2';
   final String _host = '192.168.100.43';
+  // final String _host = '10.10.10';
   final int _port = 5432;
   final String _databaseName = 'gama_multi_erp';
   final String _username = 'postgres';
