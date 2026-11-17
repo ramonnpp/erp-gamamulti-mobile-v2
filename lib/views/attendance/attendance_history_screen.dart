@@ -15,7 +15,8 @@ class AttendanceHistoryScreen extends StatefulWidget {
       _AttendanceHistoryScreenState();
 }
 
-class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
+class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen>
+    with SingleTickerProviderStateMixin {
   final List<dynamic> _allData = [];
   final List<dynamic> _filteredList = [];
   final List<String> _yearsList = ['Semua'];
@@ -26,6 +27,8 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
   String _filterMonth = 'Semua';
   String _filterYear = 'Semua';
   int _expandedIndex = -1;
+
+  late AnimationController _animController;
 
   static const _monthItems = [
     {'code': '01', 'short': 'JAN', 'full': 'Januari'},
@@ -45,7 +48,17 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
   @override
   void initState() {
     super.initState();
+    _animController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 400),
+    );
     _loadAttendanceHistory();
+  }
+
+  @override
+  void dispose() {
+    _animController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadAttendanceHistory() async {
@@ -127,6 +140,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
         _applyFilters();
         _isLoading = false;
       });
+      _animController.forward(from: 0.0);
     }
   }
 
@@ -153,6 +167,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
       ..clear()
       ..addAll(result);
     _expandedIndex = -1;
+    _animController.forward(from: 0.0);
   }
 
   String _calculateDuration(String checkIn, String checkOut) {
@@ -247,295 +262,287 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
       value: SystemUiOverlayStyle.light,
       child: Scaffold(
         backgroundColor: const Color(0xFFDCE4EC),
-        body: RefreshIndicator(
-          color: AppTheme.primaryColor,
-          onRefresh: _loadAttendanceHistory,
-          child: CustomScrollView(
-            slivers: [
-              // 1. Header Hijau Solid Korporat Bersih (Tanpa Gradient)
-              SliverToBoxAdapter(
-                child: Container(
-                  width: double.infinity,
-                  decoration: const BoxDecoration(
-                    color: AppTheme.primaryColor,
-                    borderRadius: BorderRadius.vertical(
-                      bottom: Radius.circular(28),
-                    ),
-                  ),
-                  padding: EdgeInsets.fromLTRB(
-                    18,
-                    MediaQuery.of(context).padding.top + 12,
-                    14,
-                    22,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+        body: Column(
+          children: [
+            // --- HEADER HIJAU TETAP DI ATAS DENGAN DESAIN HALUS & TIDAK KAKU ---
+            Container(
+              width: double.infinity,
+              decoration: const BoxDecoration(
+                color: AppTheme.primaryColor,
+                borderRadius: BorderRadius.vertical(
+                  bottom: Radius.circular(28),
+                ),
+              ),
+              padding: EdgeInsets.fromLTRB(
+                18,
+                MediaQuery.of(context).padding.top + 10,
+                14,
+                20,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
                     children: [
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(10),
-                            decoration: BoxDecoration(
-                              color: AppTheme.accentColor.withValues(
-                                alpha: 0.16,
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: AppTheme.accentColor.withValues(alpha: 0.16),
+                          borderRadius: BorderRadius.circular(13),
+                          border: Border.all(
+                            color: AppTheme.accentColor.withValues(alpha: 0.45),
+                          ),
+                        ),
+                        child: const Icon(
+                          Icons.receipt_long_rounded,
+                          size: 22,
+                          color: AppTheme.accentColor,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'History Presensi',
+                              style: TextStyle(
+                                fontSize: 19,
+                                fontWeight: FontWeight.w800,
+                                color: Colors.white,
                               ),
-                              borderRadius: BorderRadius.circular(13),
-                              border: Border.all(
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '$_periodLabel • $total catatan',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
                                 color: AppTheme.accentColor.withValues(
-                                  alpha: 0.45,
+                                  alpha: 0.92,
                                 ),
                               ),
                             ),
-                            child: const Icon(
-                              Icons.receipt_long_rounded,
-                              size: 22,
-                              color: AppTheme.accentColor,
+                          ],
+                        ),
+                      ),
+                      Theme(
+                        data: Theme.of(context).copyWith(
+                          iconTheme: const IconThemeData(color: Colors.white),
+                        ),
+                        child: ExportMenuButton(
+                          onCsv: (ctx) async {
+                            final exportRows = [
+                              for (final e in _filteredList)
+                                {
+                                  for (final entry in (e as Map).entries)
+                                    entry.key.toString(): entry.value,
+                                },
+                            ];
+                            await ExportService.exportAttendanceCsv(
+                              ctx,
+                              exportRows,
+                              userName,
+                            );
+                          },
+                          onPdf: (ctx) async {
+                            final exportRows = [
+                              for (final e in _filteredList)
+                                {
+                                  for (final entry in (e as Map).entries)
+                                    entry.key.toString(): entry.value,
+                                },
+                            ];
+                            await ExportService.exportAttendancePdf(
+                              ctx,
+                              exportRows,
+                              userName,
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  _darkSegmentedGauge(
+                    total: total,
+                    hadir: hadir,
+                    libur: libur,
+                    tidakHadir: tidakHadir,
+                  ),
+                ],
+              ),
+            ),
+
+            // --- KONTEN BAWAH YANG BISA DI-SCROLL DENGAN AMAN DARI NAVBAR ---
+            Expanded(
+              child: RefreshIndicator(
+                color: AppTheme.primaryColor,
+                onRefresh: _loadAttendanceHistory,
+                child: ListView(
+                  physics: const AlwaysScrollableScrollPhysics(
+                    parent: BouncingScrollPhysics(),
+                  ),
+                  // PADDING BAWAH 130: Mencegah item terbawah tertutup navbar melayang
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 130),
+                  children: [
+                    // Toggle Button Bar untuk Sembunyikan/Tampilkan Filter
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                              width: 4,
+                              height: 16,
+                              decoration: BoxDecoration(
+                                color: AppTheme.primaryColor,
+                                borderRadius: BorderRadius.circular(2),
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text(
-                                  'History Presensi',
-                                  style: TextStyle(
-                                    fontSize: 19,
+                            const SizedBox(width: 8),
+                            const Text(
+                              'Filter',
+                              style: TextStyle(
+                                fontSize: 14.5,
+                                fontWeight: FontWeight.w800,
+                                color: AppTheme.textPrimary,
+                              ),
+                            ),
+                            if (_activeFilterCount > 0) ...[
+                              const SizedBox(width: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.primaryColor,
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Text(
+                                  '$_activeFilterCount',
+                                  style: const TextStyle(
+                                    fontSize: 10,
                                     fontWeight: FontWeight.w800,
                                     color: Colors.white,
                                   ),
                                 ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  '$_periodLabel • $total catatan',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                    color: AppTheme.accentColor.withValues(
-                                      alpha: 0.92,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          Theme(
-                            data: Theme.of(context).copyWith(
-                              iconTheme: const IconThemeData(
-                                color: Colors.white,
                               ),
-                            ),
-                            child: ExportMenuButton(
-                              onCsv: (ctx) async {
-                                final exportRows = [
-                                  for (final e in _filteredList)
-                                    {
-                                      for (final entry in (e as Map).entries)
-                                        entry.key.toString(): entry.value,
-                                    },
-                                ];
-                                await ExportService.exportAttendanceCsv(
-                                  ctx,
-                                  exportRows,
-                                  userName,
-                                );
-                              },
-                              onPdf: (ctx) async {
-                                final exportRows = [
-                                  for (final e in _filteredList)
-                                    {
-                                      for (final entry in (e as Map).entries)
-                                        entry.key.toString(): entry.value,
-                                    },
-                                ];
-                                await ExportService.exportAttendancePdf(
-                                  ctx,
-                                  exportRows,
-                                  userName,
-                                );
-                              },
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 18),
-                      _darkSegmentedGauge(
-                        total: total,
-                        hadir: hadir,
-                        libur: libur,
-                        tidakHadir: tidakHadir,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-
-              // 2. Filter Hub + Ledger List
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Toggle Button Bar untuk Sembunyikan/Tampilkan Filter
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Row(
-                            children: [
-                              Container(
-                                width: 4,
-                                height: 16,
-                                decoration: BoxDecoration(
-                                  color: AppTheme.primaryColor,
-                                  borderRadius: BorderRadius.circular(2),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              const Text(
-                                'Filter',
-                                style: TextStyle(
-                                  fontSize: 14.5,
-                                  fontWeight: FontWeight.w800,
-                                  color: AppTheme.textPrimary,
-                                ),
-                              ),
-                              if (_activeFilterCount > 0) ...[
-                                const SizedBox(width: 6),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 6,
-                                    vertical: 2,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: AppTheme.primaryColor,
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                  child: Text(
-                                    '$_activeFilterCount',
-                                    style: const TextStyle(
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.w800,
-                                      color: Colors.white,
-                                    ),
-                                  ),
-                                ),
-                              ],
                             ],
-                          ),
-                          TextButton.icon(
-                            onPressed: () {
-                              HapticFeedback.lightImpact();
-                              setState(() {
-                                _isFilterHubVisible = !_isFilterHubVisible;
-                              });
-                            },
-                            style: TextButton.styleFrom(
-                              foregroundColor: AppTheme.primaryColor,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 4,
-                              ),
-                            ),
-                            icon: Icon(
-                              _isFilterHubVisible
-                                  ? Icons.visibility_off_rounded
-                                  : Icons.visibility_rounded,
-                              size: 16,
-                            ),
-                            label: Text(
-                              _isFilterHubVisible ? 'Sembunyikan' : 'Tampilkan',
-                              style: const TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-
-                      const SizedBox(height: 8),
-
-                      // Animated Collapse/Expand Filter Card
-                      AnimatedSize(
-                        duration: const Duration(milliseconds: 260),
-                        curve: Curves.easeOutCubic,
-                        child: _isFilterHubVisible
-                            ? Padding(
-                                padding: const EdgeInsets.only(bottom: 16),
-                                child: _interactiveFilterHub(),
-                              )
-                            : const SizedBox.shrink(),
-                      ),
-
-                      // Section Label Catatan Harian
-                      Row(
-                        children: [
-                          Container(
-                            width: 4,
-                            height: 16,
-                            decoration: BoxDecoration(
-                              color: AppTheme.primaryColor,
-                              borderRadius: BorderRadius.circular(2),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          const Text(
-                            'Catatan Harian',
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w800,
-                              color: AppTheme.textPrimary,
-                            ),
-                          ),
-                          const Spacer(),
-                          const Text(
-                            'Ketuk baris untuk rincian',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              color: AppTheme.textSecondary,
-                            ),
-                          ),
-                        ],
-                      ),
-
-                      const SizedBox(height: 12),
-
-                      if (_isLoading)
-                        const Center(
-                          child: Padding(
-                            padding: EdgeInsets.all(42),
-                            child: CircularProgressIndicator(
-                              color: AppTheme.primaryColor,
-                            ),
-                          ),
-                        )
-                      else if (_filteredList.isEmpty)
-                        _emptyStateCard()
-                      else
-                        Column(
-                          children: [
-                            for (
-                              int index = 0;
-                              index < _filteredList.length;
-                              index++
-                            )
-                              _AnimatedEntry(
-                                delayMs: 100 + ((index > 8 ? 8 : index) * 45),
-                                child: _richAccordionCard(
-                                  record: _filteredList[index],
-                                  index: index,
-                                ),
-                              ),
                           ],
                         ),
-                    ],
-                  ),
+                        TextButton.icon(
+                          onPressed: () {
+                            HapticFeedback.lightImpact();
+                            setState(() {
+                              _isFilterHubVisible = !_isFilterHubVisible;
+                            });
+                          },
+                          style: TextButton.styleFrom(
+                            foregroundColor: AppTheme.primaryColor,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 4,
+                            ),
+                          ),
+                          icon: Icon(
+                            _isFilterHubVisible
+                                ? Icons.visibility_off_rounded
+                                : Icons.visibility_rounded,
+                            size: 16,
+                          ),
+                          label: Text(
+                            _isFilterHubVisible ? 'Sembunyikan' : 'Tampilkan',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 8),
+
+                    // Animated Collapse/Expand Filter Card dengan kurva halus
+                    AnimatedSize(
+                      duration: const Duration(milliseconds: 300),
+                      curve: Curves.easeInOutCubic,
+                      child: _isFilterHubVisible
+                          ? Padding(
+                              padding: const EdgeInsets.only(bottom: 16),
+                              child: _interactiveFilterHub(),
+                            )
+                          : const SizedBox.shrink(),
+                    ),
+
+                    Row(
+                      children: [
+                        Container(
+                          width: 4,
+                          height: 16,
+                          decoration: BoxDecoration(
+                            color: AppTheme.primaryColor,
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        const Text(
+                          'Catatan Harian',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                            color: AppTheme.textPrimary,
+                          ),
+                        ),
+                        const Spacer(),
+                        const Text(
+                          'Ketuk baris untuk rincian',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: AppTheme.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 12),
+
+                    if (_isLoading)
+                      const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(42),
+                          child: CircularProgressIndicator(
+                            color: AppTheme.primaryColor,
+                          ),
+                        ),
+                      )
+                    else if (_filteredList.isEmpty)
+                      _emptyStateCard()
+                    else
+                      Column(
+                        children: [
+                          for (
+                            int index = 0;
+                            index < _filteredList.length;
+                            index++
+                          )
+                            _AnimatedEntry(
+                              delayMs: 80 + ((index > 8 ? 8 : index) * 35),
+                              child: _richAccordionCard(
+                                record: _filteredList[index],
+                                index: index,
+                              ),
+                            ),
+                        ],
+                      ),
+                  ],
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -701,6 +708,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
               children: [
                 SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
+                  physics: const BouncingScrollPhysics(),
                   child: Row(
                     children: statusOptions.map((item) {
                       final label = item['label'].toString();
@@ -724,7 +732,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                             duration: const Duration(milliseconds: 160),
                             child: AnimatedContainer(
                               duration: const Duration(milliseconds: 200),
-                              curve: Curves.easeOutCubic,
+                              curve: Curves.easeInOutCubic,
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 11,
                                 vertical: 8,
@@ -802,92 +810,96 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                Row(
-                  children: [
-                    _presetChip(
-                      label: 'Semua',
-                      active: isAllPreset,
-                      onTap: () => _selectQuickPreset('all'),
-                    ),
-                    const SizedBox(width: 6),
-                    _presetChip(
-                      label: 'Bulan Ini',
-                      active: isThisMonthPreset,
-                      onTap: () => _selectQuickPreset('this_month'),
-                    ),
-                    const SizedBox(width: 6),
-                    _presetChip(
-                      label: 'Bulan Lalu',
-                      active: isLastMonthPreset,
-                      onTap: () => _selectQuickPreset('last_month'),
-                    ),
-                    const Spacer(),
-                    GestureDetector(
-                      onTap: () {
-                        HapticFeedback.lightImpact();
-                        setState(() {
-                          _isPeriodPanelOpen = !_isPeriodPanelOpen;
-                        });
-                      },
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 7,
-                        ),
-                        decoration: BoxDecoration(
-                          color: _isPeriodPanelOpen
-                              ? AppTheme.primaryColor
-                              : const Color(0xFFE7EEF6),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  physics: const BouncingScrollPhysics(),
+                  child: Row(
+                    children: [
+                      _presetChip(
+                        label: 'Semua',
+                        active: isAllPreset,
+                        onTap: () => _selectQuickPreset('all'),
+                      ),
+                      const SizedBox(width: 6),
+                      _presetChip(
+                        label: 'Bulan Ini',
+                        active: isThisMonthPreset,
+                        onTap: () => _selectQuickPreset('this_month'),
+                      ),
+                      const SizedBox(width: 6),
+                      _presetChip(
+                        label: 'Bulan Lalu',
+                        active: isLastMonthPreset,
+                        onTap: () => _selectQuickPreset('last_month'),
+                      ),
+                      const SizedBox(width: 6),
+                      GestureDetector(
+                        onTap: () {
+                          HapticFeedback.lightImpact();
+                          setState(() {
+                            _isPeriodPanelOpen = !_isPeriodPanelOpen;
+                          });
+                        },
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6.5,
+                          ),
+                          decoration: BoxDecoration(
                             color: _isPeriodPanelOpen
                                 ? AppTheme.primaryColor
-                                : const Color(0xFFC2CFDD),
+                                : const Color(0xFFE7EEF6),
+                            borderRadius: BorderRadius.circular(9),
+                            border: Border.all(
+                              color: _isPeriodPanelOpen
+                                  ? AppTheme.primaryColor
+                                  : const Color(0xFFC2CFDD),
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.calendar_view_month_rounded,
+                                size: 14,
+                                color: _isPeriodPanelOpen
+                                    ? AppTheme.accentColor
+                                    : AppTheme.primaryColor,
+                              ),
+                              const SizedBox(width: 5),
+                              Text(
+                                'Pilih Bulan',
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w800,
+                                  color: _isPeriodPanelOpen
+                                      ? Colors.white
+                                      : AppTheme.primaryColor,
+                                ),
+                              ),
+                              const SizedBox(width: 2),
+                              AnimatedRotation(
+                                turns: _isPeriodPanelOpen ? 0.5 : 0.0,
+                                duration: const Duration(milliseconds: 200),
+                                child: Icon(
+                                  Icons.keyboard_arrow_down_rounded,
+                                  size: 16,
+                                  color: _isPeriodPanelOpen
+                                      ? Colors.white
+                                      : AppTheme.primaryColor,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.calendar_view_month_rounded,
-                              size: 14,
-                              color: _isPeriodPanelOpen
-                                  ? AppTheme.accentColor
-                                  : AppTheme.primaryColor,
-                            ),
-                            const SizedBox(width: 5),
-                            Text(
-                              'Pilih Bulan',
-                              style: TextStyle(
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.w800,
-                                color: _isPeriodPanelOpen
-                                    ? Colors.white
-                                    : AppTheme.primaryColor,
-                              ),
-                            ),
-                            const SizedBox(width: 2),
-                            AnimatedRotation(
-                              turns: _isPeriodPanelOpen ? 0.5 : 0.0,
-                              duration: const Duration(milliseconds: 200),
-                              child: Icon(
-                                Icons.keyboard_arrow_down_rounded,
-                                size: 16,
-                                color: _isPeriodPanelOpen
-                                    ? Colors.white
-                                    : AppTheme.primaryColor,
-                              ),
-                            ),
-                          ],
-                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
                 AnimatedSize(
-                  duration: const Duration(milliseconds: 260),
-                  curve: Curves.easeOutCubic,
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeInOutCubic,
                   child: _isPeriodPanelOpen
                       ? Container(
                           margin: const EdgeInsets.only(top: 12),
@@ -924,6 +936,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                                   Expanded(
                                     child: SingleChildScrollView(
                                       scrollDirection: Axis.horizontal,
+                                      physics: const BouncingScrollPhysics(),
                                       child: Row(
                                         children: _yearsList.map((y) {
                                           final selected = _filterYear == y;
@@ -1099,10 +1112,10 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
         : ((hadir * 100) ~/ (hadir + tidakHadir));
 
     return Container(
-      padding: const EdgeInsets.all(15),
+      padding: const EdgeInsets.all(13),
       decoration: BoxDecoration(
         color: Colors.black.withValues(alpha: 0.24),
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(color: AppTheme.accentColor.withValues(alpha: 0.3)),
       ),
       child: Column(
@@ -1113,14 +1126,17 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
               Text(
                 'Tingkat Kedisiplinan',
                 style: TextStyle(
-                  fontSize: 12.5,
+                  fontSize: 12,
                   fontWeight: FontWeight.w700,
                   color: Colors.white.withValues(alpha: 0.85),
                 ),
               ),
               const Spacer(),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 2.5,
+                ),
                 decoration: BoxDecoration(
                   color: AppTheme.accentColor,
                   borderRadius: BorderRadius.circular(20),
@@ -1128,7 +1144,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                 child: Text(
                   '$rate% Hadir',
                   style: const TextStyle(
-                    fontSize: 11,
+                    fontSize: 10.5,
                     fontWeight: FontWeight.w800,
                     color: AppTheme.primaryColor,
                   ),
@@ -1136,11 +1152,11 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 11),
+          const SizedBox(height: 8),
           ClipRRect(
             borderRadius: BorderRadius.circular(8),
             child: SizedBox(
-              height: 9,
+              height: 7,
               child: total == 0
                   ? Container(color: Colors.white.withValues(alpha: 0.16))
                   : Row(
@@ -1164,7 +1180,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                     ),
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -1184,22 +1200,22 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
       mainAxisSize: MainAxisSize.min,
       children: [
         Container(
-          width: 8,
-          height: 8,
+          width: 7,
+          height: 7,
           decoration: BoxDecoration(color: dotColor, shape: BoxShape.circle),
         ),
-        const SizedBox(width: 5),
+        const SizedBox(width: 4),
         Text(
           '$label ',
           style: TextStyle(
-            fontSize: 11,
+            fontSize: 10.5,
             color: Colors.white.withValues(alpha: 0.78),
           ),
         ),
         Text(
           value,
           style: TextStyle(
-            fontSize: 12.5,
+            fontSize: 11.5,
             fontWeight: FontWeight.w800,
             color: dotColor,
             fontFeatures: const [FontFeature.tabularFigures()],
@@ -1242,241 +1258,235 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
           ),
         ],
       ),
-      child: IntrinsicHeight(
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Container(width: 6, color: accentColor),
-            Expanded(
-              child: Column(
-                children: [
-                  InkWell(
-                    onTap: () {
-                      setState(() {
-                        _expandedIndex = isExpanded ? -1 : index;
-                      });
-                    },
-                    child: Container(
-                      color: isExpanded ? headerTint : Colors.transparent,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 13,
-                        vertical: 12,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Material(
+            color: isExpanded ? headerTint : Colors.transparent,
+            child: InkWell(
+              onTap: () {
+                setState(() {
+                  _expandedIndex = isExpanded ? -1 : index;
+                });
+              },
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 13,
+                  vertical: 12,
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 46,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: headerTint,
+                        borderRadius: BorderRadius.circular(11),
+                        border: Border.all(
+                          color: accentColor.withValues(alpha: 0.35),
+                        ),
                       ),
-                      child: Row(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Container(
-                            width: 46,
-                            height: 48,
-                            decoration: BoxDecoration(
-                              color: headerTint,
-                              borderRadius: BorderRadius.circular(11),
-                              border: Border.all(
-                                color: accentColor.withValues(alpha: 0.35),
-                              ),
-                            ),
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Text(
-                                  record['dayNum'].toString(),
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w800,
-                                    height: 1.05,
-                                    color: accentColor,
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  record['shortMonth'].toString(),
-                                  style: TextStyle(
-                                    fontSize: 9.5,
-                                    fontWeight: FontWeight.w800,
-                                    color: accentColor,
-                                  ),
-                                ),
-                              ],
+                          Text(
+                            record['dayNum'].toString(),
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                              height: 1.05,
+                              color: accentColor,
                             ),
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  record['day'].toString(),
-                                  style: const TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w800,
-                                    color: AppTheme.textPrimary,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                if (isLibur)
-                                  const Text(
-                                    'Akhir Pekan • Libur',
-                                    style: TextStyle(
-                                      fontSize: 11.5,
-                                      fontWeight: FontWeight.w600,
-                                      color: Color(0xFFB45309),
-                                    ),
-                                  )
-                                else
-                                  Row(
-                                    children: [
-                                      Icon(
-                                        Icons.login_rounded,
-                                        size: 13,
-                                        color: accentColor,
-                                      ),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        record['checkIn'].toString(),
-                                        style: const TextStyle(
-                                          fontSize: 11.5,
-                                          fontWeight: FontWeight.w700,
-                                          color: AppTheme.textPrimary,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      const Icon(
-                                        Icons.logout_rounded,
-                                        size: 13,
-                                        color: AppTheme.textSecondary,
-                                      ),
-                                      const SizedBox(width: 4),
-                                      Expanded(
-                                        child: Text(
-                                          record['checkOut'].toString(),
-                                          style: const TextStyle(
-                                            fontSize: 11.5,
-                                            fontWeight: FontWeight.w700,
-                                            color: AppTheme.textSecondary,
-                                          ),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                              ],
+                          const SizedBox(height: 2),
+                          Text(
+                            record['shortMonth'].toString(),
+                            style: TextStyle(
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w800,
+                              color: accentColor,
                             ),
-                          ),
-                          const SizedBox(width: 8),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 9,
-                                  vertical: 3.5,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: accentColor,
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Text(
-                                  status,
-                                  style: const TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w800,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 5),
-                              Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  if (!isLibur)
-                                    Text(
-                                      record['duration'].toString(),
-                                      style: const TextStyle(
-                                        fontSize: 11.5,
-                                        fontWeight: FontWeight.w800,
-                                        color: AppTheme.primaryColor,
-                                      ),
-                                    ),
-                                  const SizedBox(width: 2),
-                                  AnimatedRotation(
-                                    turns: isExpanded ? 0.5 : 0.0,
-                                    duration: const Duration(milliseconds: 200),
-                                    child: const Icon(
-                                      Icons.keyboard_arrow_down_rounded,
-                                      size: 18,
-                                      color: AppTheme.textSecondary,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
                           ),
                         ],
                       ),
                     ),
-                  ),
-                  AnimatedSize(
-                    duration: const Duration(milliseconds: 240),
-                    curve: Curves.easeOutCubic,
-                    child: isExpanded
-                        ? Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.fromLTRB(13, 11, 13, 13),
-                            decoration: const BoxDecoration(
-                              color: Color(0xFFEEF3F8),
-                              border: Border(
-                                top: BorderSide(color: Color(0xFFD5DFEA)),
-                              ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            record['day'].toString(),
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w800,
+                              color: AppTheme.textPrimary,
                             ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                          ),
+                          const SizedBox(height: 4),
+                          if (isLibur)
+                            const Text(
+                              'Akhir Pekan • Libur',
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFFB45309),
+                              ),
+                            )
+                          else
+                            Row(
                               children: [
+                                Icon(
+                                  Icons.login_rounded,
+                                  size: 13,
+                                  color: accentColor,
+                                ),
+                                const SizedBox(width: 4),
                                 Text(
-                                  'Tanggal Lengkap: ${record['date']}',
+                                  record['checkIn'].toString(),
                                   style: const TextStyle(
                                     fontSize: 11.5,
                                     fontWeight: FontWeight.w700,
                                     color: AppTheme.textPrimary,
                                   ),
                                 ),
-                                const SizedBox(height: 9),
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: _detailTile(
-                                        'Masuk',
-                                        record['checkIn'].toString(),
-                                        AppTheme.successColor,
-                                      ),
+                                const SizedBox(width: 8),
+                                const Icon(
+                                  Icons.logout_rounded,
+                                  size: 13,
+                                  color: AppTheme.textSecondary,
+                                ),
+                                const SizedBox(width: 4),
+                                Expanded(
+                                  child: Text(
+                                    record['checkOut'].toString(),
+                                    style: const TextStyle(
+                                      fontSize: 11.5,
+                                      fontWeight: FontWeight.w700,
+                                      color: AppTheme.textSecondary,
                                     ),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: _detailTile(
-                                        'Pulang',
-                                        record['checkOut'].toString(),
-                                        AppTheme.primaryColor,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: _detailTile(
-                                        'Durasi',
-                                        record['duration'].toString(),
-                                        const Color(0xFFB45309),
-                                      ),
-                                    ),
-                                  ],
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
                                 ),
                               ],
                             ),
-                          )
-                        : const SizedBox.shrink(),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 9,
+                            vertical: 3.5,
+                          ),
+                          decoration: BoxDecoration(
+                            color: accentColor,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            status,
+                            style: const TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 5),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (!isLibur)
+                              Text(
+                                record['duration'].toString(),
+                                style: const TextStyle(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w800,
+                                  color: AppTheme.primaryColor,
+                                ),
+                              ),
+                            const SizedBox(width: 2),
+                            AnimatedRotation(
+                              turns: isExpanded ? 0.5 : 0.0,
+                              duration: const Duration(milliseconds: 250),
+                              curve: Curves.easeInOutCubic,
+                              child: const Icon(
+                                Icons.keyboard_arrow_down_rounded,
+                                size: 18,
+                                color: AppTheme.textSecondary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          AnimatedCrossFade(
+            duration: const Duration(milliseconds: 280),
+            sizeCurve: Curves.easeInOutCubic,
+            crossFadeState: isExpanded
+                ? CrossFadeState.showSecond
+                : CrossFadeState.showFirst,
+            firstChild: const SizedBox.shrink(),
+            secondChild: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(13, 11, 13, 13),
+              decoration: const BoxDecoration(
+                color: Color(0xFFEEF3F8),
+                border: Border(top: BorderSide(color: Color(0xFFD5DFEA))),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Tanggal Lengkap: ${record['date']}',
+                    style: const TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w700,
+                      color: AppTheme.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 9),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _detailTile(
+                          'Masuk',
+                          record['checkIn'].toString(),
+                          AppTheme.successColor,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _detailTile(
+                          'Pulang',
+                          record['checkOut'].toString(),
+                          AppTheme.primaryColor,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _detailTile(
+                          'Durasi',
+                          record['duration'].toString(),
+                          const Color(0xFFB45309),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -1519,6 +1529,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
   Widget _emptyStateCard() {
     return Container(
       width: double.infinity,
+      margin: const EdgeInsets.symmetric(horizontal: 16),
       padding: const EdgeInsets.all(28),
       decoration: BoxDecoration(
         color: const Color(0xFFF8FAFC),
@@ -1589,11 +1600,11 @@ class _AnimatedEntryState extends State<_AnimatedEntry> {
     return AnimatedOpacity(
       opacity: _visible ? 1.0 : 0.0,
       duration: const Duration(milliseconds: 380),
-      curve: Curves.easeOut,
+      curve: Curves.easeInOutCubic,
       child: AnimatedSlide(
-        offset: _visible ? Offset.zero : const Offset(0, 0.04),
+        offset: _visible ? Offset.zero : const Offset(0, 0.03),
         duration: const Duration(milliseconds: 380),
-        curve: Curves.easeOutCubic,
+        curve: Curves.easeInOutCubic,
         child: widget.child,
       ),
     );
