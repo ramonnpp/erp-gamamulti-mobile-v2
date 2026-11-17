@@ -15,9 +15,31 @@ class MainNavigation extends StatefulWidget {
   State<MainNavigation> createState() => _MainNavigationState();
 }
 
-class _MainNavigationState extends State<MainNavigation> {
+class _MainNavigationState extends State<MainNavigation>
+    with SingleTickerProviderStateMixin {
   int _currentIndex = 0;
-  final PageController _pageController = PageController();
+  late AnimationController _fadeController;
+  late Animation<double> _fadeAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _fadeController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 250),
+    );
+    _fadeAnimation = CurvedAnimation(
+      parent: _fadeController,
+      curve: Curves.easeInOut,
+    );
+    _fadeController.forward();
+  }
+
+  @override
+  void dispose() {
+    _fadeController.dispose();
+    super.dispose();
+  }
 
   Future<bool> _onWillPop() async {
     if (_currentIndex != 0) {
@@ -25,7 +47,6 @@ class _MainNavigationState extends State<MainNavigation> {
       return false;
     }
 
-    // Redesign Total: Alert Keluar Aplikasi menggunakan Bottom Sheet modern ala iOS
     final confirmed = await showModalBottomSheet<bool>(
       context: context,
       backgroundColor: Colors.transparent,
@@ -147,44 +168,43 @@ class _MainNavigationState extends State<MainNavigation> {
   void _goTo(int index) {
     if (index == _currentIndex) return;
     HapticFeedback.selectionClick();
-    setState(() => _currentIndex = index);
-    _pageController.animateToPage(
-      index,
-      duration: const Duration(milliseconds: 400),
-      curve: Curves.easeInOutCubic,
-    );
+
+    _fadeController.reverse().then((_) {
+      setState(() {
+        _currentIndex = index;
+      });
+      _fadeController.forward();
+    });
   }
 
+  // Daftar Screen (6 Menu Utama)
   final List<Widget> _screens = [
-    const HomeScreen(),
-    const AttendanceScreen(),
-    const AttendanceHistoryScreen(),
-    const SickLeaveHistoryScreen(),
-    const LeaveHistoryScreen(),
-    const ProfileScreen(),
+    const HomeScreen(), // 0. Home
+    const AttendanceScreen(), // 1. Presensi
+    const SickLeaveHistoryScreen(), // 2. Izin/Sakit
+    const LeaveHistoryScreen(), // 3. Permohonan Cuti
+    const AttendanceHistoryScreen(), // 4. History
+    const ProfileScreen(), // 5. Profil
   ];
 
+  // Daftar Menu & Ikon
   final List<_NavItem> _items = [
-    _NavItem(Icons.dashboard_outlined, Icons.dashboard_rounded, 'Home'),
-    _NavItem(Icons.fingerprint_outlined, Icons.fingerprint, 'Presensi'),
-    _NavItem(Icons.history_rounded, Icons.history_rounded, 'History'),
+    _NavItem(Icons.home_outlined, Icons.home_rounded, 'Home'),
+    _NavItem(Icons.location_on_outlined, Icons.location_on_rounded, 'Presensi'),
+    _NavItem(Icons.copy_all_outlined, Icons.copy_all_rounded, 'Izin/Sakit'),
     _NavItem(
-      Icons.medical_services_outlined,
-      Icons.medical_services_rounded,
-      'Izin/Sakit',
+      Icons.calendar_month_outlined,
+      Icons.calendar_month_rounded,
+      'Cuti',
     ),
-    _NavItem(Icons.beach_access_outlined, Icons.beach_access_rounded, 'Cuti'),
-    _NavItem(Icons.person_outline_rounded, Icons.person_rounded, 'Profile'),
+    _NavItem(Icons.description_outlined, Icons.description_rounded, 'History'),
+    _NavItem(Icons.person_outline_rounded, Icons.person_rounded, 'Profil'),
   ];
-
-  @override
-  void dispose() {
-    _pageController.dispose();
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {
+    final bottomPadding = MediaQuery.of(context).padding.bottom;
+
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, result) async {
@@ -196,40 +216,73 @@ class _MainNavigationState extends State<MainNavigation> {
       },
       child: Scaffold(
         extendBody: true,
-        body: PageView(
-          controller: _pageController,
-          physics: const NeverScrollableScrollPhysics(),
-          onPageChanged: (index) => setState(() => _currentIndex = index),
-          children: _screens,
+        body: FadeTransition(
+          opacity: _fadeAnimation,
+          child: _screens[_currentIndex],
         ),
         bottomNavigationBar: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+          padding: EdgeInsets.fromLTRB(
+            16,
+            0,
+            16,
+            bottomPadding > 0 ? bottomPadding + 6 : 16,
+          ),
           child: Container(
-            height: 68,
+            height: 74,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.92),
-              borderRadius: BorderRadius.circular(34),
-              border: Border.all(
-                color: Colors.white.withValues(alpha: 0.8),
-                width: 1.5,
-              ),
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(36),
               boxShadow: [
                 BoxShadow(
-                  color: const Color(0xFF0F172A).withValues(alpha: 0.12),
-                  blurRadius: 24,
-                  offset: const Offset(0, 8),
+                  color: const Color(0xFF0F172A).withValues(alpha: 0.1),
+                  blurRadius: 20,
+                  offset: const Offset(0, 6),
                 ),
               ],
             ),
+            // Menggunakan Row dengan spaceAround agar pas di tengah dan terbagi rata di semua layar HP
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: List.generate(_items.length, (index) {
                 final item = _items[index];
                 final selected = index == _currentIndex;
-                return _iPhoneStyleNavItem(
-                  item: item,
-                  selected: selected,
+
+                return GestureDetector(
                   onTap: () => _goTo(index),
+                  behavior: HitTestBehavior.opaque,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeOutCubic,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 8,
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          selected ? item.selectedIcon : item.icon,
+                          color: selected
+                              ? AppTheme.primaryColor
+                              : AppTheme.textSecondary,
+                          size: 24,
+                        ),
+                        const SizedBox(height: 4),
+                        // Indikator titik/lengkung kecil di bawah ikon yang aktif (seperti di referensi gambar)
+                        AnimatedContainer(
+                          duration: const Duration(milliseconds: 300),
+                          width: selected ? 5 : 0,
+                          height: selected ? 5 : 0,
+                          decoration: BoxDecoration(
+                            color: AppTheme.primaryColor,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 );
               }),
             ),
@@ -245,69 +298,4 @@ class _NavItem {
   final IconData selectedIcon;
   final String label;
   const _NavItem(this.icon, this.selectedIcon, this.label);
-}
-
-class _iPhoneStyleNavItem extends StatelessWidget {
-  final _NavItem item;
-  final bool selected;
-  final VoidCallback onTap;
-
-  const _iPhoneStyleNavItem({
-    required this.item,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeInOutCubic,
-        padding: EdgeInsets.symmetric(
-          horizontal: selected ? 12 : 8,
-          vertical: 6,
-        ),
-        decoration: BoxDecoration(
-          color: selected
-              ? AppTheme.primaryColor.withValues(alpha: 0.12)
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 200),
-              transitionBuilder: (child, animation) =>
-                  ScaleTransition(scale: animation, child: child),
-              child: Icon(
-                selected ? item.selectedIcon : item.icon,
-                key: ValueKey(selected),
-                color: selected
-                    ? AppTheme.primaryColor
-                    : AppTheme.textSecondary,
-                size: selected ? 22 : 20,
-              ),
-            ),
-            const SizedBox(height: 2),
-            AnimatedDefaultTextStyle(
-              duration: const Duration(milliseconds: 200),
-              style: TextStyle(
-                fontSize: selected ? 10 : 9,
-                fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
-                color: selected
-                    ? AppTheme.primaryColor
-                    : AppTheme.textSecondary,
-              ),
-              child: Text(item.label),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }

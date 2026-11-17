@@ -365,7 +365,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     Color phaseBadgeText = AppTheme.primaryColor;
 
     if (_checkedIn && !_checkedOut) {
-      phaseBadge = 'SHIFT AKTIF • SIAP ABSEN PULANG';
+      phaseBadge = 'SHIFT AKTIF';
       phaseBadgeBg = const Color(0xFF10B981);
       phaseBadgeText = Colors.white;
     } else if (isComplete) {
