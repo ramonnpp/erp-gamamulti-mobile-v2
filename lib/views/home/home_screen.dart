@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -14,7 +13,7 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   String _checkInTime = '--:--';
   String _checkOutTime = '--:--';
   bool _isLoading = true;
@@ -29,6 +28,8 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    DatabaseService().profileImageVersion.addListener(_onProfileChanged);
     _now = DateTime.now();
     _clockTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) {
@@ -40,17 +41,33 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    DatabaseService().profileImageVersion.removeListener(_onProfileChanged);
     _clockTimer?.cancel();
     super.dispose();
   }
 
+  void _onProfileChanged() {
+    if (mounted) setState(() {});
+  }
+
+  // Saat app kembali dari background, ambil foto/nama terbaru dari database
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      DatabaseService().refreshCurrentUser();
+    }
+  }
+
   Future<void> _loadData() async {
     final db = DatabaseService();
+    final profileRefresh = db.refreshCurrentUser(); // sinkron foto & nama
     final currentUser = db.getCurrentUser();
     final userId = currentUser?['id'] ?? 1;
     final data = await db.getTodayAttendance(userId);
     final info = await db.getTodayLeaveInfo();
     final ann = await db.getAnnouncements();
+    await profileRefresh;
 
     if (!mounted) return;
     setState(() {
@@ -212,15 +229,9 @@ class _HomeScreenState extends State<HomeScreen> {
     final currentUser = DatabaseService().getCurrentUser();
     final String userName = currentUser?['name'] ?? 'Karyawan';
     final String userRole = currentUser?['role'] ?? 'Staff';
-    final String? profileImgPath = currentUser?['profile_image']?.toString();
+    // Foto selalu dari database (bytes), sama persis di semua device
     final Uint8List? profileImgBytes =
         currentUser?['profile_image_data'] as Uint8List?;
-    final File? profileFile =
-        (profileImgPath != null &&
-            profileImgPath.isNotEmpty &&
-            File(profileImgPath).existsSync())
-        ? File(profileImgPath)
-        : null;
 
     final String initial = userName.trim().isNotEmpty
         ? userName.trim()[0].toUpperCase()
@@ -264,13 +275,10 @@ class _HomeScreenState extends State<HomeScreen> {
                         child: CircleAvatar(
                           radius: 22,
                           backgroundColor: Colors.white,
-                          backgroundImage: profileFile != null
-                              ? FileImage(profileFile)
-                              : (profileImgBytes != null
-                                    ? MemoryImage(profileImgBytes)
-                                    : null),
-                          child:
-                              (profileFile == null && profileImgBytes == null)
+                          backgroundImage: profileImgBytes != null
+                              ? MemoryImage(profileImgBytes)
+                              : null,
+                          child: profileImgBytes == null
                               ? Text(
                                   initial,
                                   style: const TextStyle(

@@ -1,8 +1,7 @@
-import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:path_provider/path_provider.dart';
 import '../../theme/app_theme.dart';
 import '../../services/database_service.dart';
 import '../../widgets/custom_snackbar.dart';
@@ -17,7 +16,8 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen>
     with SingleTickerProviderStateMixin {
-  File? _image;
+  Uint8List? _imageBytes; // foto profil (sumber: database)
+  bool _imageChanged = false; // true jika user memilih foto baru
   final ImagePicker _picker = ImagePicker();
   bool _isEditing = false;
   bool _saving = false;
@@ -101,29 +101,33 @@ class _ProfileScreenState extends State<ProfileScreen>
     _emailController.text = currentUser?['email'] ?? '';
     _phoneController.text = currentUser?['phone'] ?? '';
     _roleController.text = currentUser?['role'] ?? 'Employee';
-    final img = currentUser?['profile_image']?.toString();
-    final imgBytes = currentUser?['profile_image_data'] as Uint8List?;
-    if (img != null && img.isNotEmpty && File(img).existsSync()) {
-      _image = File(img);
-    } else if (imgBytes != null && imgBytes.isNotEmpty) {
-      _writeProfileImage(imgBytes, currentUser?['id']);
-    }
+    _imageBytes = currentUser?['profile_image_data'] as Uint8List?;
+
+    // Sinkron dengan database & dengarkan perubahan dari device lain
+    DatabaseService().profileImageVersion.addListener(_onProfileChanged);
+    _syncFromServer();
   }
 
-  Future<void> _writeProfileImage(Uint8List bytes, int? userId) async {
-    final tmp = await getTemporaryDirectory();
-    final path = '${tmp.path}/profile_$userId.png';
-    final f = File(path);
-    await f.writeAsBytes(bytes);
-    if (mounted) {
-      setState(() {
-        _image = f;
-      });
-    }
+  Future<void> _syncFromServer() async {
+    await DatabaseService().refreshCurrentUser();
+    _onProfileChanged();
+  }
+
+  void _onProfileChanged() {
+    if (!mounted || _isEditing) return; // jangan timpa saat sedang edit
+    final u = DatabaseService().getCurrentUser();
+    setState(() {
+      _nameController.text = u?['name'] ?? '';
+      _phoneController.text = u?['phone'] ?? '';
+      _roleController.text = u?['role'] ?? 'Employee';
+      _imageBytes = u?['profile_image_data'] as Uint8List?;
+      _imageChanged = false;
+    });
   }
 
   @override
   void dispose() {
+    DatabaseService().profileImageVersion.removeListener(_onProfileChanged);
     _controller.dispose();
     _nameController.dispose();
     _emailController.dispose();
@@ -134,8 +138,20 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   Future<void> _pickImage(ImageSource source) async {
     HapticFeedback.selectionClick();
-    final f = await _picker.pickImage(source: source);
-    if (f != null) setState(() => _image = File(f.path));
+    // Perkecil gambar agar ringan disimpan di database & dikirim antar device
+    final f = await _picker.pickImage(
+      source: source,
+      maxWidth: 512,
+      maxHeight: 512,
+      imageQuality: 80,
+    );
+    if (f == null) return;
+    final bytes = await f.readAsBytes();
+    if (!mounted) return;
+    setState(() {
+      _imageBytes = bytes;
+      _imageChanged = true;
+    });
   }
 
   void _showImagePicker() {
@@ -249,17 +265,12 @@ class _ProfileScreenState extends State<ProfileScreen>
     final userId = currentUser?['id'];
     bool ok = true;
     if (userId is int) {
-      Uint8List? profileBytes;
-      if (_image != null) {
-        profileBytes = await _image!.readAsBytes();
-      }
       ok = await DatabaseService().updateUser(
         userId: userId,
         name: _nameController.text.trim(),
         phone: _phoneController.text.trim(),
         role: _roleController.text.trim(),
-        profileImage: _image?.path ?? currentUser?['profile_image']?.toString(),
-        profileImageBytes: profileBytes,
+        profileImageBytes: _imageChanged ? _imageBytes : null,
       );
     }
     if (!mounted) return;
@@ -268,7 +279,10 @@ class _ProfileScreenState extends State<ProfileScreen>
       CustomSnackbar.error(context, 'Gagal update profil');
       return;
     }
-    setState(() => _isEditing = false);
+    setState(() {
+      _isEditing = false;
+      _imageChanged = false;
+    });
     CustomSnackbar.success(context, 'Profil berhasil diperbarui');
   }
 
@@ -729,10 +743,10 @@ class _ProfileScreenState extends State<ProfileScreen>
                             child: CircleAvatar(
                               radius: 40,
                               backgroundColor: const Color(0xFFF1F5F9),
-                              backgroundImage: _image != null
-                                  ? FileImage(_image!)
+                              backgroundImage: _imageBytes != null
+                                  ? MemoryImage(_imageBytes!)
                                   : null,
-                              child: _image == null
+                              child: _imageBytes == null
                                   ? Text(
                                       initial,
                                       style: const TextStyle(

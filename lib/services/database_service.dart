@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
@@ -12,6 +13,31 @@ class DatabaseService {
 
   Connection? _connection;
   Map<String, dynamic>? _currentUser; // store logged‑in user
+
+  /// Naik setiap kali foto profil berubah (upload baru, atau hasil sinkron
+  /// dari database). Home & Profile mendengarkan ini agar langsung update.
+  final ValueNotifier<int> profileImageVersion = ValueNotifier<int>(0);
+
+  /// Konversi hasil kolom bytea ke Uint8List (aman untuk berbagai tipe).
+  Uint8List? _toBytes(dynamic v) {
+    if (v == null) return null;
+    if (v is Uint8List) return v.isEmpty ? null : v;
+    if (v is List<int>) return v.isEmpty ? null : Uint8List.fromList(v);
+    if (v is List) {
+      return v.isEmpty ? null : Uint8List.fromList(List<int>.from(v));
+    }
+    return null;
+  }
+
+  bool _sameBytes(Uint8List? a, Uint8List? b) {
+    if (identical(a, b)) return true;
+    if (a == null || b == null) return false;
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
 
   // Konfigurasi koneksi PostgreSQL ERP
   // Sesuaikan host, port, database name, username, dan password dengan server Anda.
@@ -77,8 +103,9 @@ class DatabaseService {
           'role': row[3],
           'phone': row[4]?.toString() ?? '',
           'profile_image': row[5]?.toString(),
-          'profile_image_data': row[6],
+          'profile_image_data': _toBytes(row[6]),
         };
+        profileImageVersion.value++;
         return _currentUser;
       }
       return null;
@@ -119,8 +146,44 @@ class DatabaseService {
       'role': prefs.getString('user_role') ?? '',
       'phone': prefs.getString('user_phone') ?? '',
       'profile_image': prefs.getString('user_profile_image'),
+      'profile_image_data': null,
     };
+    // Foto profil tidak disimpan di SharedPreferences, jadi ambil dari DB.
+    unawaited(refreshCurrentUser());
     return _currentUser;
+  }
+
+  /// Ambil data terbaru user yang sedang login langsung dari database
+  /// (nama, role, telepon, dan foto profil). Dipanggil saat Home/Profile
+  /// dibuka, saat app kembali dari background, dan saat pull-to-refresh,
+  /// sehingga semua device selalu menampilkan foto yang sama.
+  Future<void> refreshCurrentUser() async {
+    final id = _currentUser?['id'];
+    if (id is! int) return;
+    try {
+      final conn = await connect();
+      final result = await conn.execute(
+        Sql.named(
+          'SELECT name, role, phone, profile_image_data FROM users WHERE id = @id',
+        ),
+        parameters: {'id': id},
+      );
+      if (result.isEmpty || _currentUser == null) return;
+      final row = result.first;
+      final newBytes = _toBytes(row[3]);
+      final oldBytes = _currentUser!['profile_image_data'] as Uint8List?;
+      final imageChanged = !_sameBytes(oldBytes, newBytes);
+
+      _currentUser!['name'] = row[0]?.toString() ?? _currentUser!['name'];
+      _currentUser!['role'] = row[1]?.toString() ?? _currentUser!['role'];
+      _currentUser!['phone'] = row[2]?.toString() ?? '';
+      _currentUser!['profile_image_data'] = newBytes;
+
+      if (imageChanged) profileImageVersion.value++;
+    } catch (e) {
+      // Offline / gagal: tetap pakai data yang ada di memori.
+      debugPrint('Gagal sinkron data user: $e');
+    }
   }
 
   // Hapus session user (logout)
@@ -133,6 +196,7 @@ class DatabaseService {
     await prefs.remove('user_phone');
     await prefs.remove('user_profile_image');
     _currentUser = null;
+    profileImageVersion.value++;
   }
 
   // Register user baru
@@ -169,50 +233,66 @@ class DatabaseService {
     required String name,
     required String phone,
     String? role,
-    String? profileImage,
-    Uint8List? profileImageBytes,
+    Uint8List? profileImageBytes, // isi hanya jika user memilih foto baru
+    bool removeProfileImage = false, // true untuk menghapus foto
   }) async {
     try {
       final conn = await connect();
       final effectiveRole = role ?? _currentUser?['role'] ?? 'Employee';
+
       if (profileImageBytes != null) {
-        // Save bytes to profile_image_data AND store path in profile_image
         await conn.execute(
           Sql.named(
-            'UPDATE users SET name = @name, phone = @phone, role = @role, profile_image_data = @profileImageData, profile_image = @profileImage WHERE id = @userId',
+            'UPDATE users SET name = @name, phone = @phone, role = @role, profile_image_data = @profileImageData WHERE id = @userId',
           ),
           parameters: {
             'name': name,
             'phone': phone,
             'role': effectiveRole,
             'profileImageData': profileImageBytes,
-            'profileImage': profileImage,
             'userId': userId,
           },
         );
-      } else {
-        // Only path provided, clear old bytes so UI uses the path
+      } else if (removeProfileImage) {
         await conn.execute(
           Sql.named(
-            'UPDATE users SET name = @name, phone = @phone, role = @role, profile_image = @profileImage, profile_image_data = NULL WHERE id = @userId',
+            'UPDATE users SET name = @name, phone = @phone, role = @role, profile_image_data = NULL WHERE id = @userId',
           ),
           parameters: {
             'name': name,
             'phone': phone,
             'role': effectiveRole,
-            'profileImage': profileImage,
+            'userId': userId,
+          },
+        );
+      } else {
+        // Foto TIDAK disentuh, supaya tidak terhapus dari database.
+        await conn.execute(
+          Sql.named(
+            'UPDATE users SET name = @name, phone = @phone, role = @role WHERE id = @userId',
+          ),
+          parameters: {
+            'name': name,
+            'phone': phone,
+            'role': effectiveRole,
             'userId': userId,
           },
         );
       }
+
       if (_currentUser != null && _currentUser!['id'] == userId) {
         _currentUser!['name'] = name;
         _currentUser!['phone'] = phone;
         _currentUser!['role'] = effectiveRole;
-        _currentUser!['profile_image'] = profileImage;
-        _currentUser!['profile_image_data'] = profileImageBytes;
+        if (profileImageBytes != null) {
+          _currentUser!['profile_image_data'] = profileImageBytes;
+          profileImageVersion.value++;
+        } else if (removeProfileImage) {
+          _currentUser!['profile_image_data'] = null;
+          profileImageVersion.value++;
+        }
+        await saveUserSession(_currentUser!);
       }
-      await saveUserSession(_currentUser ?? {});
       return true;
     } catch (e) {
       debugPrint('Error update user: $e');
@@ -244,7 +324,9 @@ class DatabaseService {
     try {
       final conn = await connect();
       final result = await conn.execute(
-        Sql.named('SELECT id, name, start_time, end_time FROM shifts ORDER BY id'),
+        Sql.named(
+          'SELECT id, name, start_time, end_time FROM shifts ORDER BY id',
+        ),
       );
       List<Map<String, dynamic>> shifts = [];
       for (final row in result) {
@@ -260,9 +342,24 @@ class DatabaseService {
       debugPrint('Error ambil shift: $e');
       // Fallback data jika tabel belum dibuat
       return [
-        {'id': 1, 'name': 'Shift 1', 'start_time': '07:30:00', 'end_time': '16:00:00'},
-        {'id': 2, 'name': 'Shift 2', 'start_time': '08:00:00', 'end_time': '16:30:00'},
-        {'id': 3, 'name': 'Shift 3', 'start_time': '08:30:00', 'end_time': '16:00:00'},
+        {
+          'id': 1,
+          'name': 'Shift 1',
+          'start_time': '07:30:00',
+          'end_time': '16:00:00',
+        },
+        {
+          'id': 2,
+          'name': 'Shift 2',
+          'start_time': '08:00:00',
+          'end_time': '16:30:00',
+        },
+        {
+          'id': 3,
+          'name': 'Shift 3',
+          'start_time': '08:30:00',
+          'end_time': '16:00:00',
+        },
       ];
     }
   }
@@ -331,7 +428,12 @@ class DatabaseService {
       };
     } catch (e) {
       debugPrint('Error ambil presensi: $e');
-      return {'checkIn': '--:--', 'checkOut': '--:--', 'shiftId': -1, 'status': 'Tepat Waktu'};
+      return {
+        'checkIn': '--:--',
+        'checkOut': '--:--',
+        'shiftId': -1,
+        'status': 'Tepat Waktu',
+      };
     }
   }
 
@@ -347,12 +449,14 @@ class DatabaseService {
     try {
       final conn = await connect();
       final result = await conn.execute(
-        Sql.named('''SELECT a.date, a.type, a.timestamp, a.shift_id, a.status, s.name as shift_name, s.start_time, s.end_time FROM attendance a
+        Sql.named(
+          '''SELECT a.date, a.type, a.timestamp, a.shift_id, a.status, s.name as shift_name, s.start_time, s.end_time FROM attendance a
              LEFT JOIN shifts s ON a.shift_id = s.id
              WHERE a.user_id = @userId
              AND EXTRACT(MONTH FROM a.date) = @month
              AND EXTRACT(YEAR FROM a.date) = @year
-             ORDER BY a.date DESC, a.timestamp ASC'''),
+             ORDER BY a.date DESC, a.timestamp ASC''',
+        ),
         parameters: {'userId': userId, 'month': queryMonth, 'year': queryYear},
       );
 
