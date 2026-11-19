@@ -66,9 +66,9 @@ class _SplashScreenState extends State<SplashScreen>
     Navigator.pushReplacement(
       context,
       PageRouteBuilder(
-        pageBuilder: (_, __, ___) =>
+        pageBuilder: (_, _, _) =>
             user != null ? const MainNavigation() : const LoginScreen(),
-        transitionsBuilder: (_, animation, __, child) =>
+        transitionsBuilder: (_, animation, _, child) =>
             FadeTransition(opacity: animation, child: child),
         transitionDuration: const Duration(milliseconds: 350),
       ),
@@ -119,7 +119,7 @@ class _SplashScreenState extends State<SplashScreen>
                         child: Image.asset(
                           'assets/icon/app_icon.png',
                           fit: BoxFit.contain,
-                          errorBuilder: (_, __, ___) => const Icon(
+                          errorBuilder: (_, _, _) => const Icon(
                             Icons.business_center_rounded,
                             size: 64,
                             color: AppTheme.primaryColor,
@@ -180,7 +180,7 @@ class _SplashScreenState extends State<SplashScreen>
                           tween: Tween<double>(begin: 0, end: _progress),
                           duration: const Duration(milliseconds: 450),
                           curve: Curves.easeOutCubic,
-                          builder: (_, value, __) => LinearProgressIndicator(
+                          builder: (_, value, _) => LinearProgressIndicator(
                             value: value,
                             minHeight: 3.5,
                             backgroundColor: Colors.white.withValues(

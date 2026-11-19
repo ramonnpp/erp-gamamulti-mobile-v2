@@ -45,6 +45,12 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen>
     {'code': '12', 'short': 'DES', 'full': 'Desember'},
   ];
 
+  String _formatTimeShort(String raw) {
+    final match = RegExp(r'(\d{1,2}):(\d{2})').firstMatch(raw);
+    if (match == null) return raw;
+    return '${match.group(1)}.${match.group(2)}';
+  }
+
   @override
   void initState() {
     super.initState();
@@ -78,10 +84,31 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen>
       final type = record['type'].toString();
       final timestamp = record['timestamp'].toString();
       if (!grouped.containsKey(date)) {
-        grouped[date] = {'checkIn': '-', 'checkOut': '-'};
+        grouped[date] = {
+          'checkIn': '-',
+          'checkOut': '-',
+          'shift_name': '',
+          'shift_time': '',
+          'status': '',
+        };
       }
       if (type == 'CheckIn') {
         grouped[date]['checkIn'] = timestamp;
+        // Ambil shift dan status dari record CheckIn pertama hari itu
+        final shiftName = record['shift_name']?.toString();
+        final start = record['shift_start']?.toString();
+        final end = record['shift_end']?.toString();
+        final statusVal = record['status']?.toString();
+
+        if (shiftName != null && shiftName.isNotEmpty) {
+          grouped[date]['shift_name'] = shiftName;
+        }
+        if (start != null && end != null) {
+          grouped[date]['shift_time'] = '${_formatTimeShort(start)} - ${_formatTimeShort(end)}';
+        }
+        if (statusVal != null && statusVal.isNotEmpty) {
+          grouped[date]['status'] = statusVal;
+        }
       } else if (type == 'CheckOut') {
         grouped[date]['checkOut'] = timestamp;
       }
@@ -101,8 +128,23 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen>
         final checkInStr = times['checkIn']?.toString() ?? '-';
         final checkOutStr = times['checkOut']?.toString() ?? '-';
         final hasCheckIn = checkInStr != '-';
+        final storedStatus = (times['status'] as String?)?.trim();
+        final shiftName = (times['shift_name'] as String?)?.trim() ?? '';
+        final shiftTime = (times['shift_time'] as String?)?.trim() ?? '';
 
         yearMap[dateOnly.split('-')[0]] = true;
+
+        // Tentukan status: Libur > (dari DB) > Tepat Waktu/Terlambat > Tidak Hadir
+        String status;
+        if (isWeekend) {
+          status = 'Libur';
+        } else if (storedStatus == 'Terlambat' || storedStatus == 'Tepat Waktu') {
+          status = storedStatus!;
+        } else if (hasCheckIn) {
+          status = 'Tepat Waktu';
+        } else {
+          status = 'Tidak Hadir';
+        }
 
         processed.add({
           'date': formattedDate,
@@ -112,9 +154,9 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen>
           'rawDate': dateOnly,
           'checkIn': checkInStr,
           'checkOut': checkOutStr,
-          'status': isWeekend
-              ? 'Libur'
-              : (hasCheckIn ? 'Tepat Waktu' : 'Tidak Hadir'),
+          'status': status,
+          'shift_name': shiftName,
+          'shift_time': shiftTime,
           'duration': _calculateDuration(checkInStr, checkOutStr),
         });
       } catch (e) {
@@ -1396,7 +1438,42 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen>
                             ),
                           ),
                         ),
-                        const SizedBox(height: 5),
+                        const SizedBox(height: 4),
+                        // Tampilkan shift jika ada
+                        if (record['shift_name'] != null && record['shift_name'].toString().isNotEmpty && !isLibur)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: AppTheme.accentColor.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  record['shift_name'].toString(),
+                                  style: const TextStyle(
+                                    fontSize: 9.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: Color(0xFF92400E),
+                                  ),
+                                ),
+                                if (record['shift_time'] != null && record['shift_time'].toString().isNotEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.only(left: 4),
+                                    child: Text(
+                                      '(${record['shift_time']})',
+                                      style: const TextStyle(
+                                        fontSize: 9.5,
+                                        fontWeight: FontWeight.w600,
+                                        color: Color(0xFF92400E),
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        const SizedBox(height: 3),
                         Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [

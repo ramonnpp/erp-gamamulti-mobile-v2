@@ -66,8 +66,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
         context,
         PageRouteBuilder(
           transitionDuration: const Duration(milliseconds: 350),
-          pageBuilder: (_, __, ___) => const LoginScreen(),
-          transitionsBuilder: (_, animation, __, child) =>
+          pageBuilder: (_, _, _) => const LoginScreen(),
+          transitionsBuilder: (_, animation, _, child) =>
               FadeTransition(opacity: animation, child: child),
         ),
       );
@@ -176,7 +176,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           child: Image.asset(
                             'assets/icon/app_icon.png',
                             fit: BoxFit.contain,
-                            errorBuilder: (_, __, ___) => const Icon(
+                            errorBuilder: (_, _, _) => const Icon(
                               Icons.business_center_rounded,
                               size: 20,
                               color: AppTheme.primaryColor,

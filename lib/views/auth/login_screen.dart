@@ -32,7 +32,7 @@ class _LoginScreenState extends State<LoginScreen> {
     return PageRouteBuilder(
       transitionDuration: const Duration(milliseconds: 380),
       reverseTransitionDuration: const Duration(milliseconds: 320),
-      pageBuilder: (_, __, ___) => const RegisterScreen(),
+      pageBuilder: (_, _, _) => const RegisterScreen(),
       transitionsBuilder: (_, animation, secondaryAnimation, child) {
         final slideIn =
             Tween<Offset>(
@@ -76,8 +76,8 @@ class _LoginScreenState extends State<LoginScreen> {
           context,
           PageRouteBuilder(
             transitionDuration: const Duration(milliseconds: 400),
-            pageBuilder: (_, __, ___) => const MainNavigation(),
-            transitionsBuilder: (_, animation, __, child) =>
+            pageBuilder: (_, _, _) => const MainNavigation(),
+            transitionsBuilder: (_, animation, _, child) =>
                 FadeTransition(opacity: animation, child: child),
           ),
         );
@@ -138,7 +138,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             child: Image.asset(
                               'assets/icon/app_icon.png',
                               fit: BoxFit.contain,
-                              errorBuilder: (_, __, ___) => const Icon(
+                              errorBuilder: (_, _, _) => const Icon(
                                 Icons.business_center_rounded,
                                 size: 38,
                                 color: AppTheme.primaryColor,

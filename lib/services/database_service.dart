@@ -239,19 +239,55 @@ class DatabaseService {
     }
   }
 
-  // Simpan presensi
+  // Ambil daftar shift dari database
+  Future<List<Map<String, dynamic>>> getShifts() async {
+    try {
+      final conn = await connect();
+      final result = await conn.execute(
+        Sql.named('SELECT id, name, start_time, end_time FROM shifts ORDER BY id'),
+      );
+      List<Map<String, dynamic>> shifts = [];
+      for (final row in result) {
+        shifts.add({
+          'id': row[0],
+          'name': row[1],
+          'start_time': row[2].toString(),
+          'end_time': row[3].toString(),
+        });
+      }
+      return shifts;
+    } catch (e) {
+      debugPrint('Error ambil shift: $e');
+      // Fallback data jika tabel belum dibuat
+      return [
+        {'id': 1, 'name': 'Shift 1', 'start_time': '07:30:00', 'end_time': '16:00:00'},
+        {'id': 2, 'name': 'Shift 2', 'start_time': '08:00:00', 'end_time': '16:30:00'},
+        {'id': 3, 'name': 'Shift 3', 'start_time': '08:30:00', 'end_time': '16:00:00'},
+      ];
+    }
+  }
+
+  // Simpan presensi dengan shift dan status keterlambatan
   Future<bool> recordAttendance({
     required int userId,
     required String type,
     required String time,
+    int? shiftId,
+    String? status,
   }) async {
     try {
       final conn = await connect();
       await conn.execute(
         Sql.named(
-          'INSERT INTO attendance (user_id, type, timestamp, date) VALUES (@userId, @type, @timestamp, CURRENT_DATE)',
+          'INSERT INTO attendance (user_id, type, timestamp, date, shift_id, status) VALUES (@userId, @type, @timestamp, CURRENT_DATE, @shiftId, @status)',
         ),
-        parameters: {'userId': userId, 'type': type, 'timestamp': time},
+        parameters: {
+          'userId': userId,
+          'type': type,
+          'timestamp': time,
+          'shiftId': shiftId ?? -1,
+          'status': status ?? 'Tepat Waktu',
+        },
       );
       return true;
     } catch (e) {
@@ -266,27 +302,36 @@ class DatabaseService {
       final conn = await connect();
       final result = await conn.execute(
         Sql.named(
-          'SELECT type, timestamp FROM attendance WHERE user_id = @userId AND date = CURRENT_DATE ORDER BY timestamp',
+          'SELECT type, timestamp, shift_id, status FROM attendance WHERE user_id = @userId AND date = CURRENT_DATE ORDER BY timestamp',
         ),
         parameters: {'userId': userId},
       );
 
       String checkIn = '--:--';
       String checkOut = '--:--';
+      int shiftId = -1;
+      String? selectedStatus;
 
       for (final row in result) {
         if (row[0] == 'CheckIn') {
           checkIn = row[1].toString();
+          shiftId = row[2] as int;
+          selectedStatus = row[3]?.toString();
         }
         if (row[0] == 'CheckOut') {
           checkOut = row[1].toString();
         }
       }
 
-      return {'checkIn': checkIn, 'checkOut': checkOut};
+      return {
+        'checkIn': checkIn,
+        'checkOut': checkOut,
+        'shiftId': shiftId,
+        'status': selectedStatus ?? 'Tepat Waktu',
+      };
     } catch (e) {
       debugPrint('Error ambil presensi: $e');
-      return {'checkIn': '--:--', 'checkOut': '--:--'};
+      return {'checkIn': '--:--', 'checkOut': '--:--', 'shiftId': -1, 'status': 'Tepat Waktu'};
     }
   }
 
@@ -302,11 +347,12 @@ class DatabaseService {
     try {
       final conn = await connect();
       final result = await conn.execute(
-        Sql.named('''SELECT date, type, timestamp FROM attendance 
-             WHERE user_id = @userId 
-             AND EXTRACT(MONTH FROM date) = @month 
-             AND EXTRACT(YEAR FROM date) = @year 
-             ORDER BY date DESC, timestamp ASC'''),
+        Sql.named('''SELECT a.date, a.type, a.timestamp, a.shift_id, a.status, s.name as shift_name, s.start_time, s.end_time FROM attendance a
+             LEFT JOIN shifts s ON a.shift_id = s.id
+             WHERE a.user_id = @userId
+             AND EXTRACT(MONTH FROM a.date) = @month
+             AND EXTRACT(YEAR FROM a.date) = @year
+             ORDER BY a.date DESC, a.timestamp ASC'''),
         parameters: {'userId': userId, 'month': queryMonth, 'year': queryYear},
       );
 
@@ -316,6 +362,11 @@ class DatabaseService {
           'date': row[0].toString(),
           'type': row[1],
           'timestamp': row[2].toString(),
+          'shift_id': row[3],
+          'status': row[4]?.toString(),
+          'shift_name': row[5]?.toString(),
+          'shift_start': row[6]?.toString(),
+          'shift_end': row[7]?.toString(),
         });
       }
       return history;
@@ -323,12 +374,66 @@ class DatabaseService {
       debugPrint('Error ambil history presensi: $e');
       // Mock data fallback untuk development/testing
       return [
-        {'date': '2026-11-05', 'type': 'CheckIn', 'timestamp': '08:05:00'},
-        {'date': '2026-11-05', 'type': 'CheckOut', 'timestamp': '17:30:00'},
-        {'date': '2026-11-04', 'type': 'CheckIn', 'timestamp': '08:10:00'},
-        {'date': '2026-11-04', 'type': 'CheckOut', 'timestamp': '17:25:00'},
-        {'date': '2026-11-03', 'type': 'CheckIn', 'timestamp': '08:00:00'},
-        {'date': '2026-11-03', 'type': 'CheckOut', 'timestamp': '17:35:00'},
+        {
+          'date': '2026-11-05',
+          'type': 'CheckIn',
+          'timestamp': '08:05:00',
+          'shift_id': 2,
+          'status': 'Tepat Waktu',
+          'shift_name': 'Shift 2',
+          'shift_start': '08:00:00',
+          'shift_end': '16:30:00',
+        },
+        {
+          'date': '2026-11-05',
+          'type': 'CheckOut',
+          'timestamp': '17:30:00',
+          'shift_id': 2,
+          'status': 'Tepat Waktu',
+          'shift_name': 'Shift 2',
+          'shift_start': '08:00:00',
+          'shift_end': '16:30:00',
+        },
+        {
+          'date': '2026-11-04',
+          'type': 'CheckIn',
+          'timestamp': '08:10:00',
+          'shift_id': 2,
+          'status': 'Terlambat',
+          'shift_name': 'Shift 2',
+          'shift_start': '08:00:00',
+          'shift_end': '16:30:00',
+        },
+        {
+          'date': '2026-11-04',
+          'type': 'CheckOut',
+          'timestamp': '17:25:00',
+          'shift_id': 2,
+          'status': 'Terlambat',
+          'shift_name': 'Shift 2',
+          'shift_start': '08:00:00',
+          'shift_end': '16:30:00',
+        },
+        {
+          'date': '2026-11-03',
+          'type': 'CheckIn',
+          'timestamp': '08:00:00',
+          'shift_id': 3,
+          'status': 'Tepat Waktu',
+          'shift_name': 'Shift 3',
+          'shift_start': '08:30:00',
+          'shift_end': '16:00:00',
+        },
+        {
+          'date': '2026-11-03',
+          'type': 'CheckOut',
+          'timestamp': '17:35:00',
+          'shift_id': 3,
+          'status': 'Tepat Waktu',
+          'shift_name': 'Shift 3',
+          'shift_start': '08:30:00',
+          'shift_end': '16:00:00',
+        },
       ];
     }
   }

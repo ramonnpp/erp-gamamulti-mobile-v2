@@ -598,7 +598,7 @@ class _HomeScreenState extends State<HomeScreen> {
               tween: Tween(begin: 0, end: progressRatio),
               duration: const Duration(milliseconds: 500),
               curve: Curves.easeOutCubic,
-              builder: (_, val, __) => LinearProgressIndicator(
+              builder: (_, val, _) => LinearProgressIndicator(
                 value: val,
                 minHeight: 6,
                 backgroundColor: Colors.white.withValues(alpha: 0.16),

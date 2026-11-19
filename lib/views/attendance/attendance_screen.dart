@@ -20,6 +20,10 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   Timer? _clockTimer;
   DateTime _now = DateTime.now();
 
+  // Data shift
+  List<Map<String, dynamic>> _shifts = [];
+  int? _selectedShiftId;
+
   @override
   void initState() {
     super.initState();
@@ -39,12 +43,44 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     final db = DatabaseService();
     final userId = db.getCurrentUser()?['id'] ?? 1;
     final data = await db.getTodayAttendance(userId);
+    final shifts = await db.getShifts();
     if (mounted) {
       setState(() {
         _checkInTime = data['checkIn']?.toString() ?? '--:--';
         _checkOutTime = data['checkOut']?.toString() ?? '--:--';
+        _shifts = shifts;
+        _selectedShiftId = (data['shiftId'] is int && (data['shiftId'] as int) > 0)
+            ? data['shiftId'] as int
+            : null;
       });
     }
+  }
+
+  String _fmtShiftTime(String raw) {
+    final hhmm = _extractHHMM(raw);
+    if (hhmm.isEmpty) return raw;
+    final parts = hhmm.split(':');
+    return '${parts[0]}.${parts[1]}';
+  }
+
+  // Extract HH:MM from a string that may be "07:30:00" or "Time(07:30:00)" etc.
+  static String _extractHHMM(dynamic val) {
+    final s = val?.toString() ?? '';
+    final match = RegExp(r'(\d{1,2}):(\d{2})').firstMatch(s);
+    if (match == null) return '';
+    return '${match.group(1)}:${match.group(2)}';
+  }
+
+  String _computeStatus(String timeStr, Map<String, dynamic> shift) {
+    final t = timeStr.split(' ')[0]; // '08:16'
+    final tParts = t.split(':');
+    if (tParts.length < 2) return 'Tepat Waktu';
+    final checkInMin = int.parse(tParts[0]) * 60 + int.parse(tParts[1]);
+    final hhmm = _extractHHMM(shift['start_time']);
+    if (hhmm.isEmpty) return 'Tepat Waktu';
+    final sp = hhmm.split(':');
+    final startMin = int.parse(sp[0]) * 60 + int.parse(sp[1]);
+    return checkInMin <= startMin + 15 ? 'Tepat Waktu' : 'Terlambat';
   }
 
   DateTime? _parseTimeToday(String raw) {
@@ -80,6 +116,12 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   Future<void> _confirmAndSubmit(bool isDatang) async {
     if (_saving) return;
     HapticFeedback.mediumImpact();
+
+    // Jika belum pilih shift, tampilkan dialog pilihan terlebih dahulu
+    if (isDatang && (_selectedShiftId == null || _shifts.isEmpty)) {
+      await _showShiftSelectionDialog();
+      if (!mounted || _selectedShiftId == null) return;
+    }
 
     final now = TimeOfDay.now();
     final timeStr =
@@ -323,10 +365,23 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     setState(() => _saving = true);
     final db = DatabaseService();
     final userId = db.getCurrentUser()?['id'] ?? 1;
+
+    // Hitung status untuk CheckIn
+    String? statusToSave;
+    if (isDatang && _selectedShiftId != null) {
+      final shift = _shifts.firstWhere(
+        (s) => s['id'] == _selectedShiftId,
+        orElse: () => {'name': '', 'start_time': ''},
+      );
+      statusToSave = _computeStatus(timeStr, shift);
+    }
+
     final ok = await db.recordAttendance(
       userId: userId,
       type: isDatang ? 'CheckIn' : 'CheckOut',
       time: timeStr,
+      shiftId: _selectedShiftId,
+      status: statusToSave,
     );
     setState(() => _saving = false);
     if (!mounted) return;
@@ -341,11 +396,151 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       CustomSnackbar.success(
         context,
         isDatang
-            ? 'Presensi Datang pukul $timeStr berhasil'
+            ? 'Presensi Datang pukul $timeStr berhasil ($statusToSave)'
             : 'Presensi Pulang pukul $timeStr berhasil',
       );
     } else {
       CustomSnackbar.error(context, 'Gagal menyimpan presensi. Coba lagi.');
+    }
+  }
+
+  Future<void> _showShiftSelectionDialog() async {
+    final result = await showModalBottomSheet<int>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) {
+        return Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+          ),
+          padding: EdgeInsets.fromLTRB(
+            24,
+            16,
+            24,
+            MediaQuery.of(ctx).padding.bottom + 24,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE2E8F0),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 20),
+              const Text(
+                'Pilih Shift Kerja',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                  color: AppTheme.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Pilih shift yang sesuai dengan jadwal kerja Anda hari ini',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: AppTheme.textSecondary,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 20),
+              ..._shifts.map((shift) {
+                final shiftId = shift['id'] as int;
+                final shiftName = shift['name'] as String;
+                final startTime = _fmtShiftTime(shift['start_time'] ?? '');
+                final endTime = _fmtShiftTime(shift['end_time'] ?? '');
+                final isSelected = _selectedShiftId == shiftId;
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: InkWell(
+                    onTap: () => Navigator.pop(ctx, shiftId),
+                    borderRadius: BorderRadius.circular(14),
+                    child: Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? AppTheme.primaryColor.withValues(alpha: 0.1)
+                            : const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: isSelected
+                              ? AppTheme.primaryColor
+                              : const Color(0xFFE2E8F0),
+                          width: isSelected ? 2 : 1,
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  shiftName,
+                                  style: TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w700,
+                                    color: isSelected
+                                        ? AppTheme.primaryColor
+                                        : AppTheme.textPrimary,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  '$startTime - $endTime',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: AppTheme.textSecondary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          if (isSelected)
+                            Icon(
+                              Icons.check_circle_rounded,
+                              color: AppTheme.primaryColor,
+                              size: 22,
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              }),
+              const SizedBox(height: 16),
+              OutlinedButton(
+                onPressed: () => Navigator.pop(ctx, null),
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size(double.infinity, 48),
+                  side: const BorderSide(color: Color(0xFFCBD5E1)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: const Text(
+                  'Batal',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: AppTheme.textSecondary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+    if (result != null && mounted) {
+      setState(() => _selectedShiftId = result);
     }
   }
 
@@ -697,7 +892,7 @@ class _CircularTapAttendanceButtonState
           if (enabled)
             AnimatedBuilder(
               animation: _pulseController,
-              builder: (_, __) {
+              builder: (context, child) {
                 final t = _pulseController.value;
                 return Transform.scale(
                   scale: 0.86 + (t * 0.24),
