@@ -43,3 +43,11 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+.claude/
+graphify-out/
+AGENTS.md
+CLAUDE.md
+backup_erp.sql
+DATABASE_SCHEMA.sql
+temp_analysis.txt

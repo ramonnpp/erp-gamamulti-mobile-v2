@@ -41,7 +41,7 @@ class DatabaseService {
 
   // Konfigurasi koneksi PostgreSQL ERP
   // Sesuaikan host, port, database name, username, dan password dengan server Anda.
-  // final String _host = '10.0.2.2';
+  // final String _host = '192.168.18.80';
   final String _host = '192.168.100.43';
   // final String _host = '10.10.10';
   final int _port = 5432;
@@ -389,6 +389,27 @@ class DatabaseService {
       return true;
     } catch (e) {
       debugPrint('Error menyimpan presensi: $e');
+      return false;
+    }
+  }
+
+  // Update shift pada record attendance berdasarkan tanggal
+  Future<bool> updateAttendanceShift({
+    required int userId,
+    required String date,
+    required int shiftId,
+  }) async {
+    try {
+      final conn = await connect();
+      await conn.execute(
+        Sql.named(
+          'UPDATE attendance SET shift_id = @shiftId WHERE user_id = @userId AND date = @date',
+        ),
+        parameters: {'userId': userId, 'date': date, 'shiftId': shiftId},
+      );
+      return true;
+    } catch (e) {
+      debugPrint('Error update shift attendance: $e');
       return false;
     }
   }

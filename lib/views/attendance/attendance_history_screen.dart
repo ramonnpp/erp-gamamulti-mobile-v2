@@ -6,6 +6,7 @@ import '../../theme/app_theme.dart';
 import '../../services/database_service.dart';
 import '../../services/export_service.dart';
 import '../../widgets/export_menu_button.dart';
+import '../../widgets/custom_snackbar.dart';
 
 class AttendanceHistoryScreen extends StatefulWidget {
   const AttendanceHistoryScreen({super.key});
@@ -27,6 +28,8 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen>
   String _filterMonth = 'Semua';
   String _filterYear = 'Semua';
   int _expandedIndex = -1;
+  List<Map<String, dynamic>> _shifts = [];
+  bool _isSavingShift = false;
 
   late AnimationController _animController;
 
@@ -67,12 +70,20 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen>
     super.dispose();
   }
 
+  Future<void> _loadShifts() async {
+    final shifts = await DatabaseService().getShifts();
+    if (mounted) setState(() => _shifts = shifts);
+  }
+
   Future<void> _loadAttendanceHistory() async {
     final user = DatabaseService().getCurrentUser();
     if (user == null) {
       if (mounted) setState(() => _isLoading = false);
       return;
     }
+
+    // Load shifts concurrently with history
+    _loadShifts();
 
     final history = await DatabaseService().getAttendanceHistory(
       userId: user['id'],
@@ -239,6 +250,199 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen>
       return '${diff ~/ 60}j ${diff % 60}m';
     } catch (_) {
       return '-';
+    }
+  }
+
+  Future<void> _showShiftSelector(Map record) async {
+    int? selectedShiftId = record['shift_id'] as int?;
+    final result = await showModalBottomSheet<int>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Container(
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+              ),
+              padding: EdgeInsets.fromLTRB(
+                24,
+                16,
+                24,
+                MediaQuery.of(ctx).padding.bottom + 24,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE2E8F0),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  const Text(
+                    'Ubah Shift',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                      color: AppTheme.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    record['date'].toString(),
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppTheme.textSecondary,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  ..._shifts.map((shift) {
+                    final shiftId = shift['id'] as int;
+                    final shiftName = shift['name'] as String;
+                    final startTime = _formatTimeShort(shift['start_time'] ?? '');
+                    final endTime = _formatTimeShort(shift['end_time'] ?? '');
+                    final isSelected = selectedShiftId == shiftId;
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: InkWell(
+                        onTap: () => setModalState(() => selectedShiftId = shiftId),
+                        borderRadius: BorderRadius.circular(14),
+                        child: Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: isSelected
+                                ? AppTheme.primaryColor.withValues(alpha: 0.1)
+                                : const Color(0xFFF8FAFC),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: isSelected
+                                  ? AppTheme.primaryColor
+                                  : const Color(0xFFE2E8F0),
+                              width: isSelected ? 2 : 1,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      shiftName,
+                                      style: TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w700,
+                                        color: isSelected
+                                            ? AppTheme.primaryColor
+                                            : AppTheme.textPrimary,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      '$startTime - $endTime',
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        color: AppTheme.textSecondary,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              if (isSelected)
+                                Icon(
+                                  Icons.check_circle_rounded,
+                                  color: AppTheme.primaryColor,
+                                  size: 22,
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  }),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () => Navigator.pop(ctx),
+                          style: OutlinedButton.styleFrom(
+                            minimumSize: const Size(0, 48),
+                            side: const BorderSide(color: Color(0xFFCBD5E1)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          child: const Text(
+                            'Batal',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                              color: AppTheme.textSecondary,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: selectedShiftId != null
+                              ? () => Navigator.pop(ctx, selectedShiftId)
+                              : null,
+                          style: ElevatedButton.styleFrom(
+                            minimumSize: const Size(0, 48),
+                            backgroundColor: AppTheme.primaryColor,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          child: const Text(
+                            'Simpan',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+    if (result != null) {
+      await _confirmEditShift(record, result);
+    }
+  }
+
+  Future<void> _confirmEditShift(Map record, int newShiftId) async {
+    if (_isSavingShift) return;
+    final user = DatabaseService().getCurrentUser();
+    if (user == null) return;
+    setState(() => _isSavingShift = true);
+    final ok = await DatabaseService().updateAttendanceShift(
+      userId: user['id'] as int,
+      date: record['rawDate'],
+      shiftId: newShiftId,
+    );
+    setState(() => _isSavingShift = false);
+    if (!mounted) return;
+    if (ok) {
+      await _loadAttendanceHistory();
+      CustomSnackbar.success(context, 'Shift berhasil diubah');
+    } else {
+      CustomSnackbar.error(context, 'Gagal mengubah shift. Coba lagi.');
     }
   }
 
@@ -1473,11 +1677,11 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen>
                               ],
                             ),
                           ),
-                        const SizedBox(height: 3),
+                        const SizedBox(height: 4),
                         Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            if (!isLibur)
+                            if (!isLibur) ...[
                               Text(
                                 record['duration'].toString(),
                                 style: const TextStyle(
@@ -1486,7 +1690,45 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen>
                                   color: AppTheme.primaryColor,
                                 ),
                               ),
-                            const SizedBox(width: 2),
+                              const SizedBox(width: 6),
+                              Material(
+                                color: AppTheme.primaryColor,
+                                borderRadius: BorderRadius.circular(8),
+                                child: InkWell(
+                                  onTap: () {
+                                    HapticFeedback.selectionClick();
+                                    _showShiftSelector(record);
+                                  },
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 4.5,
+                                    ),
+                                    child: const Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          Icons.edit_rounded,
+                                          size: 13,
+                                          color: Colors.white,
+                                        ),
+                                        SizedBox(width: 4),
+                                        Text(
+                                          'Edit',
+                                          style: TextStyle(
+                                            fontSize: 10.5,
+                                            fontWeight: FontWeight.w800,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                            const SizedBox(width: 4),
                             AnimatedRotation(
                               turns: isExpanded ? 0.5 : 0.0,
                               duration: const Duration(milliseconds: 250),
