@@ -849,4 +849,77 @@ class DatabaseService {
       return null;
     }
   }
+
+  // Ambil daftar log aktivitas pengguna saat ini
+  Future<List<Map<String, dynamic>>> getActivityLogs() async {
+    try {
+      final conn = await connect();
+      final result = await conn.execute(
+        Sql.named(
+          'SELECT id, user_id, log_content, activity_date, created_at '
+          'FROM activity_logs WHERE user_id = @userId '
+          'ORDER BY created_at DESC',
+        ),
+        parameters: {'userId': _currentUser?['id'] ?? -1},
+      );
+      List<Map<String, dynamic>> logs = [];
+      for (final row in result) {
+        logs.add({
+          'id': row[0],
+          'user_id': row[1],
+          'log': row[2]?.toString() ?? '',
+          'activity_date': row[3]?.toString() ?? '',
+          'created_at': row[4]?.toString() ?? '',
+        });
+      }
+      return logs;
+    } catch (e) {
+      debugPrint('Error ambil activity logs: $e');
+      return [];
+    }
+  }
+
+  // Simpan log aktivitas baru
+  Future<bool> submitActivityLog({
+    required String content,
+    required String activityDate,
+  }) async {
+    try {
+      final userId = _currentUser?['id'];
+      if (userId == null) return false;
+      final conn = await connect();
+      await conn.execute(
+        Sql.named(
+          'INSERT INTO activity_logs (user_id, log_content, activity_date) '
+          'VALUES (@userId, @content, @activityDate)',
+        ),
+        parameters: {
+          'userId': userId,
+          'content': content,
+          'activityDate': activityDate,
+        },
+      );
+      return true;
+    } catch (e) {
+      debugPrint('Error simpan activity log: $e');
+      return false;
+    }
+  }
+
+  // Hapus log aktivitas berdasarkan id
+  Future<bool> deleteActivityLog(int logId) async {
+    try {
+      final conn = await connect();
+      await conn.execute(
+        Sql.named(
+          'DELETE FROM activity_logs WHERE id = @logId',
+        ),
+        parameters: {'logId': logId},
+      );
+      return true;
+    } catch (e) {
+      debugPrint('Error hapus activity log: $e');
+      return false;
+    }
+  }
 }

@@ -6,6 +6,7 @@ import '../attendance/attendance_screen.dart';
 import '../attendance/attendance_history_screen.dart';
 import '../leave/leave_history_screen.dart';
 import '../leave/sick_leave_history_screen.dart';
+import '../activity_log/activity_log_screen.dart';
 import '../profile/profile_screen.dart';
 
 class MainNavigation extends StatefulWidget {
@@ -184,7 +185,8 @@ class _MainNavigationState extends State<MainNavigation>
     const SickLeaveHistoryScreen(), // 2. Izin/Sakit
     const LeaveHistoryScreen(), // 3. Permohonan Cuti
     const AttendanceHistoryScreen(), // 4. History
-    const ProfileScreen(), // 5. Profil
+    const ActivityLogScreen(), // 5. Log Aktivitas
+    const ProfileScreen(), // 6. Profil
   ];
 
   // Daftar Menu & Ikon
@@ -198,6 +200,7 @@ class _MainNavigationState extends State<MainNavigation>
       'Cuti',
     ),
     _NavItem(Icons.description_outlined, Icons.description_rounded, 'History'),
+    _NavItem(Icons.timeline_outlined, Icons.timeline_rounded, 'Log'),
     _NavItem(Icons.person_outline_rounded, Icons.person_rounded, 'Profil'),
   ];
 
