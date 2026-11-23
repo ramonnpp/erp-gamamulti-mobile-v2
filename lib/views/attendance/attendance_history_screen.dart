@@ -540,7 +540,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen>
                           ),
                         ),
                         child: const Icon(
-                          Icons.receipt_long_rounded,
+                          Icons.history_rounded,
                           size: 22,
                           color: AppTheme.accentColor,
                         ),
@@ -1858,7 +1858,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen>
       child: Column(
         children: [
           const Icon(
-            Icons.inbox_rounded,
+            Icons.history_rounded,
             size: 38,
             color: AppTheme.textSecondary,
           ),

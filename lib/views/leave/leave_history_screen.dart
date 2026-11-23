@@ -163,7 +163,7 @@ class _LeaveHistoryScreenState extends State<LeaveHistoryScreen>
       ? Icons.groups_rounded
       : t.contains('Darurat')
       ? Icons.warning_amber_rounded
-      : Icons.beach_access_rounded;
+      : Icons.calendar_month_rounded;
 
   Color _typeColor(String t) => t.contains('Bersama')
       ? const Color(0xFF8B5CF6)
@@ -291,7 +291,7 @@ class _LeaveHistoryScreenState extends State<LeaveHistoryScreen>
                 color: Colors.white.withValues(alpha: 0.2),
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: const Icon(Icons.beach_access_rounded, color: Colors.white, size: 18),
+              child: const Icon(Icons.calendar_month_rounded, color: Colors.white, size: 18),
             ),
             const SizedBox(width: 10),
             const Expanded(
@@ -741,7 +741,7 @@ class _LeaveHistoryScreenState extends State<LeaveHistoryScreen>
                     _buildChip(
                       'Cuti Tahunan',
                       _filterType,
-                      Icons.beach_access_rounded,
+                      Icons.calendar_month_rounded,
                       (v) {
                         setState(() {
                           _filterType = v;
@@ -994,7 +994,7 @@ class _LeaveHistoryScreenState extends State<LeaveHistoryScreen>
                 shape: BoxShape.circle,
               ),
               child: const Icon(
-                Icons.beach_access_rounded,
+                Icons.calendar_month_rounded,
                 size: 52,
                 color: AppTheme.primaryColor,
               ),

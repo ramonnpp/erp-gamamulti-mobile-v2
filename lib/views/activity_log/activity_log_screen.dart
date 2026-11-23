@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../theme/app_theme.dart';
 import '../../services/database_service.dart';
+import '../../services/export_service.dart';
+import '../../widgets/export_menu_button.dart';
+import '../../widgets/custom_snackbar.dart';
 import 'add_activity_log_sheet.dart';
 import 'activity_log_detail_sheet.dart';
-import '../../widgets/custom_snackbar.dart';
-import '../../widgets/export_menu_button.dart';
-import '../../services/export_service.dart';
 
 class ActivityLogScreen extends StatefulWidget {
   const ActivityLogScreen({super.key});
@@ -15,7 +15,8 @@ class ActivityLogScreen extends StatefulWidget {
   State<ActivityLogScreen> createState() => _ActivityLogScreenState();
 }
 
-class _ActivityLogScreenState extends State<ActivityLogScreen> {
+class _ActivityLogScreenState extends State<ActivityLogScreen>
+    with SingleTickerProviderStateMixin {
   List<Map<String, dynamic>> _logs = [];
   List<Map<String, dynamic>> _filteredLogs = [];
   bool _isLoading = true;
@@ -23,7 +24,10 @@ class _ActivityLogScreenState extends State<ActivityLogScreen> {
   String _filterMonth = 'Semua';
   String _filterYear = 'Semua';
 
-  final List<Map<String, String>> _months = [
+  late AnimationController _animController;
+  late Animation<double> _fadeAnimation;
+
+  final List<Map<String, String>> _months = const [
     {'label': 'Semua Bulan', 'value': 'Semua'},
     {'label': 'Januari', 'value': '01'},
     {'label': 'Februari', 'value': '02'},
@@ -42,7 +46,21 @@ class _ActivityLogScreenState extends State<ActivityLogScreen> {
   @override
   void initState() {
     super.initState();
+    _animController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 350),
+    );
+    _fadeAnimation = CurvedAnimation(
+      parent: _animController,
+      curve: Curves.easeOutCubic,
+    );
     _loadLogs();
+  }
+
+  @override
+  void dispose() {
+    _animController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadLogs() async {
@@ -53,12 +71,13 @@ class _ActivityLogScreenState extends State<ActivityLogScreen> {
       _applyFilter();
       _isLoading = false;
     });
+    _animController.forward(from: 0.0);
   }
 
   String _formatCreatedAt(String raw) {
     try {
       return DateFormat(
-        'dd MMM yyyy, HH:mm',
+        'dd MMM yyyy • HH:mm',
         'id_ID',
       ).format(DateTime.parse(raw));
     } catch (_) {
@@ -69,7 +88,7 @@ class _ActivityLogScreenState extends State<ActivityLogScreen> {
   String _formatActivityDate(String raw) {
     try {
       return DateFormat(
-        'dd MMMM yyyy',
+        'EEEE, dd MMM yyyy',
         'id_ID',
       ).format(DateTime.parse(raw.split(' ').first));
     } catch (_) {
@@ -81,12 +100,49 @@ class _ActivityLogScreenState extends State<ActivityLogScreen> {
     final years = <String>{};
     for (final log in _logs) {
       try {
-        final parts = log['activity_date'].toString().split('-');
-        if (parts.isNotEmpty) years.add(parts[0]);
+        final parts = log['activity_date']
+            .toString()
+            .split(' ')
+            .first
+            .split('-');
+        if (parts.isNotEmpty && parts[0].isNotEmpty) {
+          years.add(parts[0]);
+        }
       } catch (_) {}
     }
     final sorted = years.toList()..sort((a, b) => b.compareTo(a));
     return ['Semua', ...sorted];
+  }
+
+  int get _activeFilterCount =>
+      (_filterMonth != 'Semua' ? 1 : 0) + (_filterYear != 'Semua' ? 1 : 0);
+
+  int get _countThisMonth {
+    final now = DateTime.now();
+    final currentYear = now.year.toString();
+    final currentMonth = now.month.toString().padLeft(2, '0');
+    return _logs.where((log) {
+      try {
+        final parts = log['activity_date']
+            .toString()
+            .split(' ')
+            .first
+            .split('-');
+        return parts.length >= 2 &&
+            parts[0] == currentYear &&
+            parts[1] == currentMonth;
+      } catch (_) {
+        return false;
+      }
+    }).length;
+  }
+
+  int get _countToday {
+    final todayStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
+    return _logs.where((log) {
+      final raw = log['activity_date']?.toString().split(' ').first ?? '';
+      return raw == todayStr;
+    }).length;
   }
 
   void _applyFilter() {
@@ -94,7 +150,7 @@ class _ActivityLogScreenState extends State<ActivityLogScreen> {
     if (_filterMonth != 'Semua') {
       data = data.where((log) {
         try {
-          final p = log['activity_date'].toString().split('-');
+          final p = log['activity_date'].toString().split(' ').first.split('-');
           return p.length >= 2 && p[1] == _filterMonth;
         } catch (_) {
           return false;
@@ -104,7 +160,7 @@ class _ActivityLogScreenState extends State<ActivityLogScreen> {
     if (_filterYear != 'Semua') {
       data = data.where((log) {
         try {
-          final p = log['activity_date'].toString().split('-');
+          final p = log['activity_date'].toString().split(' ').first.split('-');
           return p.isNotEmpty && p[0] == _filterYear;
         } catch (_) {
           return false;
@@ -112,303 +168,847 @@ class _ActivityLogScreenState extends State<ActivityLogScreen> {
       }).toList();
     }
     _filteredLogs = data;
+    _animController.forward(from: 0.0);
   }
 
-  // ── Filter Widget (inline) ────────────────────────────────────────────────
-  Widget _buildFilterWidget() {
-    if (!_isFilterExpanded) return const SizedBox.shrink();
+  void _resetFilter() {
+    setState(() {
+      _filterMonth = 'Semua';
+      _filterYear = 'Semua';
+      _applyFilter();
+    });
+  }
+
+  void _showDeleteDialog(BuildContext ctx, Map<String, dynamic> log) {
+    bool isDeleting = false;
+
+    showDialog(
+      context: ctx,
+      barrierDismissible: true,
+      builder: (dialogCtx) => StatefulBuilder(
+        builder: (context, setDialogState) => Dialog(
+          backgroundColor: Colors.white,
+          surfaceTintColor: Colors.transparent,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(9),
+                      decoration: BoxDecoration(
+                        color: AppTheme.errorColor.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(
+                        Icons.delete_outline_rounded,
+                        size: 20,
+                        color: AppTheme.errorColor,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Text(
+                        'Hapus Log Aktivitas',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          color: AppTheme.textPrimary,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Catatan aktivitas ini akan dihapus permanen dan tidak dapat dikembalikan.',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: AppTheme.textSecondary,
+                    height: 1.5,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Row(
+                  children: [
+                    Expanded(
+                      child: SizedBox(
+                        height: 44,
+                        child: OutlinedButton(
+                          onPressed: isDeleting
+                              ? null
+                              : () => Navigator.pop(dialogCtx),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppTheme.textPrimary,
+                            side: const BorderSide(color: Color(0xFFCBD5E1)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          child: const Text(
+                            'Batal',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: SizedBox(
+                        height: 44,
+                        child: ElevatedButton(
+                          onPressed: isDeleting
+                              ? null
+                              : () async {
+                                  setDialogState(() => isDeleting = true);
+                                  final ok = await DatabaseService()
+                                      .deleteActivityLog(log['id'] as int);
+                                  if (!dialogCtx.mounted) return;
+                                  Navigator.pop(dialogCtx);
+                                  if (!mounted) return;
+                                  if (ok) {
+                                    CustomSnackbar.success(
+                                      context,
+                                      'Log aktivitas berhasil dihapus.',
+                                    );
+                                    _loadLogs();
+                                  } else {
+                                    CustomSnackbar.error(
+                                      context,
+                                      'Gagal menghapus log.',
+                                    );
+                                  }
+                                },
+                          style: ElevatedButton.styleFrom(
+                            elevation: 0,
+                            backgroundColor: AppTheme.errorColor,
+                            foregroundColor: Colors.white,
+                            disabledBackgroundColor: AppTheme.errorColor
+                                .withValues(alpha: 0.5),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          child: isDeleting
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : const Text(
+                                  'Hapus',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSliverAppBar(String userName) {
+    return SliverAppBar(
+      pinned: true,
+      snap: false,
+      floating: false,
+      elevation: 0,
+      expandedHeight: 132.0,
+      backgroundColor: AppTheme.primaryColor,
+      foregroundColor: Colors.white,
+      flexibleSpace: FlexibleSpaceBar(
+        titlePadding: const EdgeInsets.fromLTRB(20, 0, 16, 16),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(7),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.16),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(
+                Icons.timeline_rounded,
+                color: Colors.white,
+                size: 18,
+              ),
+            ),
+            const SizedBox(width: 10),
+            const Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Log Aktivitas',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 16,
+                      letterSpacing: -0.3,
+                    ),
+                  ),
+                  SizedBox(height: 2),
+                  Text(
+                    'Catatan pekerjaan dan aktivitas harian',
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontWeight: FontWeight.w500,
+                      fontSize: 10.5,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        background: Container(
+          decoration: const BoxDecoration(
+            color: AppTheme.primaryColor,
+            borderRadius: BorderRadius.vertical(bottom: Radius.circular(32)),
+          ),
+        ),
+      ),
+      actions: [
+        Center(
+          child: Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: ExportMenuButton(
+              onCsv: (ctx) => ExportService.exportActivityLogsCsv(
+                ctx,
+                _filteredLogs,
+                userName,
+              ),
+              onPdf: (ctx) => ExportService.exportActivityLogsPdf(
+                ctx,
+                _filteredLogs,
+                userName,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStatsOverview() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Row(
+        children: [
+          Expanded(
+            child: _buildStatItem(
+              title: 'Total Log',
+              value: '${_logs.length}',
+              subtitle: 'Seluruh catatan',
+              icon: Icons.assignment_outlined,
+              color: AppTheme.primaryColor,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: _buildStatItem(
+              title: 'Bulan Ini',
+              value: '$_countThisMonth',
+              subtitle: 'Periode berjalan',
+              icon: Icons.calendar_today_rounded,
+              color: AppTheme.accentColor,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: _buildStatItem(
+              title: 'Hari Ini',
+              value: '$_countToday',
+              subtitle: 'Tercatat hari ini',
+              icon: Icons.check_circle_outline_rounded,
+              color: const Color(0xFF0F766E),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatItem({
+    required String title,
+    required String value,
+    required String subtitle,
+    required IconData icon,
+    required Color color,
+  }) {
     return Container(
-      margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
-                'Filter Berdasarkan',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  color: AppTheme.textPrimary,
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(10),
                 ),
+                child: Icon(icon, size: 16, color: color),
               ),
-              const Spacer(),
-              TextButton(
-                onPressed: () => setState(() {
-                  _filterMonth = 'Semua';
-                  _filterYear = 'Semua';
-                  _applyFilter();
-                }),
-                child: const Text(
-                  'Reset',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: AppTheme.errorColor,
-                  ),
+              Text(
+                value,
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                  color: color,
+                  fontFeatures: const [FontFeature.tabularFigures()],
                 ),
               ),
             ],
           ),
-          const Divider(height: 16, thickness: 0.5),
-          const SizedBox(height: 8),
-          const Text(
-            'Bulan',
-            style: TextStyle(
+          const SizedBox(height: 10),
+          Text(
+            title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
               fontSize: 11.5,
               fontWeight: FontWeight.w700,
-              color: AppTheme.textSecondary,
+              color: AppTheme.textPrimary,
             ),
           ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: _months.map((m) {
-              final s = _filterMonth == m['value'];
-              return ChoiceChip(
-                label: Text(m['label']!),
-                selected: s,
-                onSelected: (_) => setState(() {
-                  _filterMonth = m['value']!;
-                  _applyFilter();
-                }),
-                selectedColor: AppTheme.primaryColor,
-                checkmarkColor: Colors.white,
-                backgroundColor: const Color(0xFFF1F5F9),
-                labelStyle: TextStyle(
-                  fontSize: 12,
-                  color: s ? Colors.white : AppTheme.textSecondary,
-                  fontWeight: s ? FontWeight.w700 : FontWeight.w600,
-                ),
-              );
-            }).toList(),
-          ),
-          const SizedBox(height: 12),
-          const Text(
-            'Tahun',
-            style: TextStyle(
-              fontSize: 11.5,
-              fontWeight: FontWeight.w700,
-              color: AppTheme.textSecondary,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: _availableYears.map((y) {
-              final s = _filterYear == y;
-              return ChoiceChip(
-                label: Text(y),
-                selected: s,
-                onSelected: (_) => setState(() {
-                  _filterYear = y;
-                  _applyFilter();
-                }),
-                selectedColor: AppTheme.primaryColor,
-                checkmarkColor: Colors.white,
-                backgroundColor: const Color(0xFFF1F5F9),
-                labelStyle: TextStyle(
-                  fontSize: 12,
-                  color: s ? Colors.white : AppTheme.textSecondary,
-                  fontWeight: s ? FontWeight.w700 : FontWeight.w600,
-                ),
-              );
-            }).toList(),
+          Text(
+            subtitle,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 10, color: AppTheme.textSecondary),
           ),
         ],
       ),
     );
   }
 
-  // ── Card Widget (inline) ──────────────────────────────────────────────────
-  Widget _buildLogCard(
-    Map<String, dynamic> log,
-    String actDate,
-    String createdAt,
-  ) {
-    return InkWell(
-      onTap: () => ActivityLogDetailSheet.show(
-        context,
-        log: log,
-        formattedActivityDate: actDate,
-        formattedCreatedAt: createdAt,
-      ),
-      borderRadius: BorderRadius.circular(20),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 14),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.05),
-              blurRadius: 16,
-              offset: const Offset(0, 4),
-            ),
-          ],
-          border: Border.all(color: const Color(0xFFEEF2F6)),
+  Widget _buildCollapsibleFilter() {
+    final activeCount = _activeFilterCount;
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: activeCount > 0
+              ? AppTheme.primaryColor.withValues(alpha: 0.45)
+              : const Color(0xFFE2E8F0),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          AppTheme.accentColor.withValues(alpha: 0.2),
-                          AppTheme.accentColor.withValues(alpha: 0.06),
-                        ],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
+      ),
+      child: Column(
+        children: [
+          Material(
+            color: Colors.transparent,
+            borderRadius: BorderRadius.circular(18),
+            child: InkWell(
+              onTap: () =>
+                  setState(() => _isFilterExpanded = !_isFilterExpanded),
+              borderRadius: BorderRadius.circular(18),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 12,
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(7),
+                      decoration: BoxDecoration(
+                        color: activeCount > 0
+                            ? AppTheme.primaryColor
+                            : AppTheme.primaryColor.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(10),
                       ),
-                      borderRadius: BorderRadius.circular(12),
+                      child: Icon(
+                        Icons.tune_rounded,
+                        size: 16,
+                        color: activeCount > 0
+                            ? Colors.white
+                            : AppTheme.primaryColor,
+                      ),
                     ),
-                    child: const Icon(
-                      Icons.note_alt_rounded,
-                      size: 20,
-                      color: AppTheme.accentColor,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      actDate,
-                      style: const TextStyle(
-                        fontSize: 14,
+                    const SizedBox(width: 10),
+                    const Text(
+                      'Filter Periode',
+                      style: TextStyle(
+                        fontSize: 13.5,
                         fontWeight: FontWeight.w700,
                         color: AppTheme.textPrimary,
                       ),
                     ),
-                  ),
-                  const Icon(
-                    Icons.arrow_forward_ios_rounded,
-                    size: 12,
-                    color: AppTheme.textSecondary,
-                  ),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Text(
-                log['log']?.toString() ?? '',
-                maxLines: 3,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 13,
-                  color: AppTheme.textSecondary,
-                  height: 1.5,
+                    if (activeCount > 0) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppTheme.primaryColor,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          '$activeCount aktif',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
+                    const Spacer(),
+                    if (activeCount > 0)
+                      GestureDetector(
+                        onTap: _resetFilter,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 9,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFEF2F2),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: const Color(0xFFFCA5A5)),
+                          ),
+                          child: const Text(
+                            'Reset',
+                            style: TextStyle(
+                              color: AppTheme.errorColor,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ),
+                    const SizedBox(width: 6),
+                    AnimatedRotation(
+                      turns: _isFilterExpanded ? 0.5 : 0,
+                      duration: const Duration(milliseconds: 220),
+                      child: const Icon(
+                        Icons.keyboard_arrow_down_rounded,
+                        size: 22,
+                        color: AppTheme.textSecondary,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
-            const SizedBox(height: 12),
+          ),
+          AnimatedCrossFade(
+            duration: const Duration(milliseconds: 240),
+            firstChild: const SizedBox.shrink(),
+            secondChild: _buildFilterContent(),
+            crossFadeState: _isFilterExpanded
+                ? CrossFadeState.showSecond
+                : CrossFadeState.showFirst,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFilterContent() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Divider(height: 1, color: Color(0xFFF1F5F9)),
+        Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            children: [
+              Expanded(
+                child: _buildDropdown(
+                  label: 'Bulan',
+                  icon: Icons.calendar_month_rounded,
+                  value: _filterMonth,
+                  items: _months
+                      .map((m) => (m['label']!, m['value']!))
+                      .toList(),
+                  onChanged: (v) => setState(() {
+                    _filterMonth = v;
+                    _applyFilter();
+                  }),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _buildDropdown(
+                  label: 'Tahun',
+                  icon: Icons.date_range_rounded,
+                  value: _filterYear,
+                  items: _availableYears
+                      .map((y) => (y == 'Semua' ? 'Semua Tahun' : y, y))
+                      .toList(),
+                  onChanged: (v) => setState(() {
+                    _filterYear = v;
+                    _applyFilter();
+                  }),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDropdown({
+    required String label,
+    required IconData icon,
+    required String value,
+    required List<(String, String)> items,
+    required ValueChanged<String> onChanged,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(icon, size: 12, color: AppTheme.textSecondary),
+            const SizedBox(width: 4),
+            Text(
+              label.toUpperCase(),
+              style: const TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                color: AppTheme.textSecondary,
+                letterSpacing: 1.0,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF8FAFC),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFFCBD5E1)),
+          ),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              value: value,
+              isExpanded: true,
+              icon: const Icon(
+                Icons.keyboard_arrow_down_rounded,
+                size: 18,
+                color: AppTheme.textSecondary,
+              ),
+              style: const TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+                color: AppTheme.textPrimary,
+              ),
+              items: items
+                  .map(
+                    (e) => DropdownMenuItem<String>(
+                      value: e.$2,
+                      child: Text(e.$1, overflow: TextOverflow.ellipsis),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (v) {
+                if (v != null) onChanged(v);
+              },
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildListHeader() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(18, 16, 18, 6),
+      child: Row(
+        children: [
+          const Text(
+            'Daftar Catatan Aktivitas',
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+              color: AppTheme.textPrimary,
+              letterSpacing: 0.2,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(
+              color: AppTheme.primaryColor.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(
+              '${_filteredLogs.length}',
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: AppTheme.primaryColor,
+                fontFeatures: [FontFeature.tabularFigures()],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    final hasFilter = _activeFilterCount > 0;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 40),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: const BoxDecoration(
-                color: Color(0xFFFAFBFC),
-                borderRadius: BorderRadius.vertical(
-                  bottom: Radius.circular(20),
-                ),
-                border: Border(top: BorderSide(color: Color(0xFFF1F5F9))),
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+                border: Border.all(color: const Color(0xFFE2E8F0)),
               ),
-              child: Row(
-                children: [
-                  const Icon(
-                    Icons.access_time_rounded,
-                    size: 12,
-                    color: AppTheme.textSecondary,
-                  ),
-                  const SizedBox(width: 5),
-                  Text(
-                    createdAt,
-                    style: const TextStyle(
-                      fontSize: 11.5,
-                      color: AppTheme.textSecondary,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const Spacer(),
-                  GestureDetector(
-                    onTap: () => _showDeleteDialog(context, log),
-                    child: const Icon(
-                      Icons.delete_outline_rounded,
-                      size: 18,
-                      color: AppTheme.errorColor,
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  const Text(
-                    'Lihat Detail',
-                    style: TextStyle(
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w700,
-                      color: AppTheme.primaryColor,
-                    ),
-                  ),
-                ],
+              child: const Icon(
+                Icons.timeline_rounded,
+                size: 36,
+                color: AppTheme.primaryColor,
               ),
             ),
+            const SizedBox(height: 16),
+            Text(
+              hasFilter
+                  ? 'Tidak Ada Log Sesuai Filter'
+                  : 'Belum Ada Log Aktivitas',
+              style: const TextStyle(
+                color: AppTheme.textPrimary,
+                fontSize: 15.5,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              hasFilter
+                  ? 'Coba ubah pilihan bulan atau tahun, atau reset filter.'
+                  : 'Tekan tombol Tambah Log untuk mencatat pekerjaan harian Anda.',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: AppTheme.textSecondary,
+                fontSize: 12.5,
+                height: 1.45,
+              ),
+            ),
+            if (hasFilter) ...[
+              const SizedBox(height: 16),
+              OutlinedButton.icon(
+                onPressed: _resetFilter,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppTheme.primaryColor,
+                  side: const BorderSide(color: AppTheme.primaryColor),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 9,
+                  ),
+                ),
+                icon: const Icon(Icons.refresh_rounded, size: 15),
+                label: const Text(
+                  'Reset Filter',
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
+                ),
+              ),
+            ],
           ],
         ),
       ),
     );
   }
 
-  void _showDeleteDialog(BuildContext ctx, Map<String, dynamic> log) {
-    showDialog(
-      context: ctx,
-      builder: (dialogCtx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text(
-          'Hapus Log Aktivitas?',
-          style: TextStyle(fontWeight: FontWeight.w700, color: AppTheme.textPrimary),
-        ),
-        content: const Text(
-          'Log yang dihapus tidak dapat dikembalikan.',
-          style: TextStyle(color: AppTheme.textSecondary),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogCtx),
-            child: const Text('Batal', style: TextStyle(color: AppTheme.textSecondary)),
+  Widget _buildLogCard(Map<String, dynamic> log) {
+    final actDate = _formatActivityDate(log['activity_date']?.toString() ?? '');
+    final createdAt = _formatCreatedAt(log['created_at']?.toString() ?? '');
+    final content = log['log']?.toString().trim() ?? '';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(20),
+        child: InkWell(
+          onTap: () =>
+              Navigator.push(context, ActivityLogDetailScreen.route(log)),
+          borderRadius: BorderRadius.circular(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 12, 8),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(9),
+                      decoration: BoxDecoration(
+                        color: AppTheme.accentColor.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(
+                        Icons.event_note_rounded,
+                        color: AppTheme.accentColor,
+                        size: 19,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            actDate,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 14,
+                              color: AppTheme.textPrimary,
+                              fontFeatures: [FontFeature.tabularFigures()],
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Dicatat $createdAt',
+                            style: const TextStyle(
+                              fontSize: 11.5,
+                              color: AppTheme.textSecondary,
+                              fontFeatures: [FontFeature.tabularFigures()],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => _showDeleteDialog(context, log),
+                      visualDensity: VisualDensity.compact,
+                      tooltip: 'Hapus log',
+                      icon: const Icon(
+                        Icons.delete_outline_rounded,
+                        size: 18,
+                        color: AppTheme.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (content.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 2, 16, 12),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: Text(
+                      content,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        color: AppTheme.textPrimary,
+                        height: 1.45,
+                      ),
+                    ),
+                  ),
+                ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 11,
+                ),
+                decoration: const BoxDecoration(
+                  color: Color(0xFFFAFBFC),
+                  borderRadius: BorderRadius.vertical(
+                    bottom: Radius.circular(20),
+                  ),
+                  border: Border(top: BorderSide(color: Color(0xFFF1F5F9))),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(
+                      Icons.article_outlined,
+                      size: 13,
+                      color: AppTheme.textSecondary,
+                    ),
+                    SizedBox(width: 5),
+                    Text(
+                      'Catatan Harian',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.textSecondary,
+                      ),
+                    ),
+                    Spacer(),
+                    Text(
+                      'Lihat Detail',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w700,
+                        color: AppTheme.primaryColor,
+                      ),
+                    ),
+                    SizedBox(width: 4),
+                    Icon(
+                      Icons.arrow_forward_ios_rounded,
+                      size: 11,
+                      color: AppTheme.primaryColor,
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
-          ElevatedButton(
-            onPressed: () async {
-              final ok = await DatabaseService().deleteActivityLog(log['id'] as int);
-              if (!dialogCtx.mounted) return;
-              Navigator.pop(dialogCtx);
-              if (!mounted) return;
-              if (ok) {
-                CustomSnackbar.success(context, 'Log berhasil dihapus.');
-                _loadLogs();
-              } else {
-                CustomSnackbar.error(context, 'Gagal menghapus log.');
-              }
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.errorColor),
-            child: const Text('Hapus'),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -416,134 +1016,85 @@ class _ActivityLogScreenState extends State<ActivityLogScreen> {
   @override
   Widget build(BuildContext context) {
     final safeBottom = MediaQuery.of(context).padding.bottom;
-    final navBarHeight = 74.0 + (safeBottom > 0 ? safeBottom : 16.0);
-    final bottomPad = 16.0 + navBarHeight + 16.0;
-    final userName = DatabaseService().getCurrentUser()?['name']?.toString() ?? 'Karyawan';
+    final bottomPad = 130.0 + (safeBottom > 0 ? safeBottom : 16.0);
+    final userName =
+        DatabaseService().getCurrentUser()?['name']?.toString() ?? 'Karyawan';
 
     return Scaffold(
-      backgroundColor: AppTheme.backgroundColor,
-      appBar: AppBar(
-        title: const Text('Log Aktivitas'),
-        backgroundColor: AppTheme.primaryColor,
-        foregroundColor: Colors.white,
-        elevation: 0,
-        centerTitle: true,
-        actions: [
-          ExportMenuButton(
-            onCsv: (ctx) => ExportService.exportActivityLogsCsv(ctx, _filteredLogs, userName),
-            onPdf: (ctx) => ExportService.exportActivityLogsPdf(ctx, _filteredLogs, userName),
-          ),
-          const SizedBox(width: 4),
-          GestureDetector(
-            onTap: () => setState(() => _isFilterExpanded = !_isFilterExpanded),
-            child: Container(
-              margin: const EdgeInsets.only(right: 16),
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: _isFilterExpanded
-                    ? Colors.white.withValues(alpha: 0.2)
-                    : Colors.transparent,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.4)),
-              ),
-              child: const Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.filter_list_rounded,
-                    size: 16,
-                    color: Colors.white,
-                  ),
-                  SizedBox(width: 4),
-                  Text(
-                    'Filter',
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
+      backgroundColor: const Color(0xFFF4F7F6),
+      body: NestedScrollView(
+        headerSliverBuilder: (context, innerBoxIsScrolled) => [
+          _buildSliverAppBar(userName),
         ],
-      ),
-      body: Column(
-        children: [
-          _buildFilterWidget(),
-          Expanded(
-            child: _isLoading
-                ? const Center(
-                    child: CircularProgressIndicator(
-                      color: AppTheme.primaryColor,
-                    ),
-                  )
-                : _filteredLogs.isEmpty
-                ? Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          width: 80,
-                          height: 80,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: AppTheme.primaryColor.withValues(alpha: 0.1),
-                          ),
-                          child: Icon(
-                            Icons.note_outlined,
-                            size: 40,
-                            color: AppTheme.primaryColor,
-                          ),
-                        ),
-                        const SizedBox(height: 18),
-                        const Text(
-                          'Belum Ada Log Aktivitas',
-                          style: TextStyle(
-                            color: AppTheme.textPrimary,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        const Text(
-                          'Mulai catat kegiatan harianmu!',
-                          style: TextStyle(
-                            color: AppTheme.textSecondary,
-                            fontSize: 13,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ],
-                    ),
-                  )
-                : ListView.builder(
-                    padding: EdgeInsets.fromLTRB(16, 8, 16, bottomPad),
-                    itemCount: _filteredLogs.length,
-                    itemBuilder: (ctx, i) {
-                      final log = _filteredLogs[i];
-                      final actDate = _formatActivityDate(
-                        log['activity_date']?.toString() ?? '',
-                      );
-                      final createdAt = _formatCreatedAt(
-                        log['created_at']?.toString() ?? '',
-                      );
-                      return _buildLogCard(log, actDate, createdAt);
-                    },
+        body: RefreshIndicator(
+          color: AppTheme.primaryColor,
+          backgroundColor: Colors.white,
+          onRefresh: _loadLogs,
+          child: CustomScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            slivers: [
+              SliverToBoxAdapter(
+                child: FadeTransition(
+                  opacity: _fadeAnimation,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const SizedBox(height: 16),
+                      _buildStatsOverview(),
+                      _buildCollapsibleFilter(),
+                      _buildListHeader(),
+                    ],
                   ),
+                ),
+              ),
+              _isLoading
+                  ? const SliverFillRemaining(
+                      hasScrollBody: false,
+                      child: Center(
+                        child: CircularProgressIndicator(
+                          color: AppTheme.primaryColor,
+                        ),
+                      ),
+                    )
+                  : _filteredLogs.isEmpty
+                  ? SliverFillRemaining(
+                      hasScrollBody: false,
+                      child: FadeTransition(
+                        opacity: _fadeAnimation,
+                        child: _buildEmptyState(),
+                      ),
+                    )
+                  : SliverPadding(
+                      padding: EdgeInsets.fromLTRB(16, 4, 16, bottomPad),
+                      sliver: SliverList(
+                        delegate: SliverChildBuilderDelegate(
+                          (context, index) =>
+                              _buildLogCard(_filteredLogs[index]),
+                          childCount: _filteredLogs.length,
+                        ),
+                      ),
+                    ),
+            ],
           ),
-        ],
+        ),
       ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       floatingActionButton: Padding(
-        padding: EdgeInsets.only(bottom: navBarHeight),
+        padding: const EdgeInsets.only(bottom: 88.0),
         child: FloatingActionButton.extended(
+          elevation: 4,
           onPressed: () =>
               AddActivityLogSheet.show(context, onSuccess: _loadLogs),
           backgroundColor: AppTheme.primaryColor,
           foregroundColor: Colors.white,
-          label: const Text('Tambah Log'),
-          icon: const Icon(Icons.edit_rounded),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          icon: const Icon(Icons.add_rounded, size: 22),
+          label: const Text(
+            'Tambah Log',
+            style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
+          ),
         ),
       ),
     );

@@ -323,7 +323,7 @@ class _LeaveFormDialogState extends State<LeaveFormDialog>
                           borderRadius: BorderRadius.circular(16),
                         ),
                         child: const Icon(
-                          Icons.spa_rounded,
+                          Icons.calendar_month_rounded,
                           color: Colors.white,
                           size: 26,
                         ),
