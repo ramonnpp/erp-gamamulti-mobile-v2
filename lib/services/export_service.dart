@@ -1,11 +1,9 @@
-import 'dart:io';
-import 'dart:typed_data';
 import 'dart:convert';
+import 'dart:typed_data';
+import 'package:flutter_file_dialog/flutter_file_dialog.dart';
+import 'package:flutter/material.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:path_provider/path_provider.dart';
-import 'package:share_plus/share_plus.dart';
-import 'package:flutter/material.dart';
 import '../widgets/custom_snackbar.dart';
 
 class ExportService {
@@ -14,29 +12,45 @@ class ExportService {
     return '"$s"';
   }
 
+  static String _s(Map<String, dynamic> r, String key) =>
+      r[key]?.toString() ?? '';
+
+  /// CSV dengan BOM UTF-8 supaya Excel membaca karakter dengan benar.
+  static Uint8List _csvBytes(StringBuffer sb) {
+    return Uint8List.fromList([
+      0xEF,
+      0xBB,
+      0xBF,
+      ...utf8.encode(sb.toString()),
+    ]);
+  }
+
+  static String _two(int n) => n.toString().padLeft(2, '0');
+
+  static String _stamp() {
+    final n = DateTime.now();
+    return '${n.year}${_two(n.month)}${_two(n.day)}_'
+        '${_two(n.hour)}${_two(n.minute)}${_two(n.second)}';
+  }
+
+  /// Simpan lewat dialog "Simpan sebagai" Android (pilih folder, mis. Download).
   static Future<void> _saveToDownloads(
-    BuildContext context,
-    Uint8List bytes,
-    String filename,
-    String mimeType,
-  ) async {
+    BuildContext context, {
+    required Uint8List bytes,
+    required String baseName,
+    required String ext,
+  }) async {
     try {
-      final dir = await getDownloadsDirectory();
-      if (dir == null) {
-        if (context.mounted) {
-          CustomSnackbar.error(context, 'Folder Download tidak tersedia');
-        }
+      final name = '${baseName}_${_stamp()}.$ext';
+      final savedPath = await FlutterFileDialog.saveFile(
+        params: SaveFileDialogParams(data: bytes, fileName: name),
+      );
+      if (!context.mounted) return;
+      if (savedPath == null) {
+        CustomSnackbar.error(context, 'Penyimpanan dibatalkan');
         return;
       }
-      final file = File('${dir.path}/$filename');
-      await file.writeAsBytes(bytes);
-
-      if (!context.mounted) return;
-      CustomSnackbar.success(context, 'Tersimpan: ${file.path}');
-      // Buka via share sheet agar user pilih app (hindari freeze open_filex)
-      await SharePlus.instance.share(
-        ShareParams(files: [XFile(file.path)], text: filename),
-      );
+      CustomSnackbar.success(context, 'Tersimpan: $name');
     } catch (e) {
       if (context.mounted) {
         CustomSnackbar.error(context, 'Gagal export: $e');
@@ -44,35 +58,127 @@ class ExportService {
     }
   }
 
+  static Future<void> _exportCsv(
+    BuildContext context, {
+    required String title,
+    required String userName,
+    required List<String> headers,
+    required List<List<String>> rows,
+    required String baseName,
+  }) async {
+    final sb = StringBuffer();
+    sb.writeln('$title - $userName');
+    sb.writeln(headers.join(','));
+    for (final r in rows) {
+      sb.writeln(r.map(_csvEscape).join(','));
+    }
+    await _saveToDownloads(
+      context,
+      bytes: _csvBytes(sb),
+      baseName: baseName,
+      ext: 'csv',
+    );
+  }
+
+  static Future<void> _exportPdf(
+    BuildContext context, {
+    required String title,
+    required String userName,
+    required List<String> headers,
+    required List<List<String>> rows,
+    required String baseName,
+  }) async {
+    try {
+      final doc = pw.Document();
+      doc.addPage(
+        pw.MultiPage(
+          pageFormat: PdfPageFormat.a4,
+          margin: const pw.EdgeInsets.all(32),
+          build: (ctx) => [
+            pw.Text(
+              title,
+              style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold),
+            ),
+            pw.SizedBox(height: 4),
+            pw.Text('Karyawan: $userName'),
+            pw.SizedBox(height: 16),
+            pw.TableHelper.fromTextArray(
+              headers: headers,
+              data: rows,
+              headerStyle: pw.TextStyle(
+                fontWeight: pw.FontWeight.bold,
+                fontSize: 10,
+              ),
+              cellStyle: const pw.TextStyle(fontSize: 9),
+              headerDecoration: const pw.BoxDecoration(
+                color: PdfColors.grey300,
+              ),
+              cellAlignment: pw.Alignment.centerLeft,
+              cellPadding: const pw.EdgeInsets.all(4),
+            ),
+          ],
+        ),
+      );
+      final bytes = await doc.save();
+      if (!context.mounted) return;
+      await _saveToDownloads(
+        context,
+        bytes: bytes,
+        baseName: baseName,
+        ext: 'pdf',
+      );
+    } catch (e) {
+      if (context.mounted) {
+        CustomSnackbar.error(context, 'Gagal membuat PDF: $e');
+      }
+    }
+  }
+
+  static bool _empty(BuildContext context, List data) {
+    if (data.isEmpty) {
+      CustomSnackbar.error(context, 'Tidak ada data untuk di-export');
+      return true;
+    }
+    return false;
+  }
+
+  // ------------------------------ Presensi ------------------------------
+
+  static const _attHeaders = [
+    'Tanggal',
+    'Hari',
+    'Check In',
+    'Check Out',
+    'Durasi',
+    'Status',
+  ];
+
+  static List<List<String>> _attRows(List<Map<String, dynamic>> d) => d
+      .map(
+        (r) => [
+          _s(r, 'date'),
+          _s(r, 'day'),
+          _s(r, 'checkIn'),
+          _s(r, 'checkOut'),
+          _s(r, 'duration'),
+          _s(r, 'status'),
+        ],
+      )
+      .toList();
+
   static Future<void> exportAttendanceCsv(
     BuildContext context,
     List<Map<String, dynamic>> data,
     String userName,
   ) async {
-    if (data.isEmpty) {
-      CustomSnackbar.error(context, 'Tidak ada data untuk di-export');
-      return;
-    }
-    final sb = StringBuffer();
-    sb.writeln('History Presensi - $userName');
-    sb.writeln('Tanggal,Hari,Check In,Check Out,Durasi,Status');
-    for (final r in data) {
-      sb.writeln(
-        [
-          _csvEscape(r['date']?.toString() ?? ''),
-          _csvEscape(r['day']?.toString() ?? ''),
-          _csvEscape(r['checkIn']?.toString() ?? ''),
-          _csvEscape(r['checkOut']?.toString() ?? ''),
-          _csvEscape(r['duration']?.toString() ?? ''),
-          _csvEscape(r['status']?.toString() ?? ''),
-        ].join(','),
-      );
-    }
-    await _saveToDownloads(
+    if (_empty(context, data)) return;
+    await _exportCsv(
       context,
-      Uint8List.fromList(utf8.encode(sb.toString())),
-      'history_presensi.csv',
-      'text/csv',
+      title: 'History Presensi',
+      userName: userName,
+      headers: _attHeaders,
+      rows: _attRows(data),
+      baseName: 'history_presensi',
     );
   }
 
@@ -81,96 +187,52 @@ class ExportService {
     List<Map<String, dynamic>> data,
     String userName,
   ) async {
-    if (data.isEmpty) {
-      CustomSnackbar.error(context, 'Tidak ada data untuk di-export');
-      return;
-    }
-    try {
-      final doc = pw.Document();
-      doc.addPage(
-        pw.Page(
-          pageFormat: PdfPageFormat.a4,
-          build: (context) => pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
-            children: [
-              pw.Text(
-                'History Presensi',
-                style: pw.TextStyle(
-                  fontSize: 20,
-                  fontWeight: pw.FontWeight.bold,
-                ),
-              ),
-              pw.Text('Karyawan: $userName'),
-              pw.SizedBox(height: 16),
-              pw.TableHelper.fromTextArray(
-                headers: const [
-                  'Tanggal',
-                  'Hari',
-                  'Check In',
-                  'Check Out',
-                  'Durasi',
-                  'Status',
-                ],
-                data: data
-                    .map(
-                      (r) => [
-                        r['date']?.toString() ?? '',
-                        r['day']?.toString() ?? '',
-                        r['checkIn']?.toString() ?? '',
-                        r['checkOut']?.toString() ?? '',
-                        r['duration']?.toString() ?? '',
-                        r['status']?.toString() ?? '',
-                      ],
-                    )
-                    .toList(),
-              ),
-            ],
-          ),
-        ),
-      );
-      final bytes = await doc.save();
-      if (!context.mounted) return;
-      await _saveToDownloads(
-        context,
-        bytes,
-        'history_presensi.pdf',
-        'application/pdf',
-      );
-    } catch (e) {
-      if (context.mounted) {
-        CustomSnackbar.error(context, 'Gagal membuat PDF: $e');
-      }
-    }
+    if (_empty(context, data)) return;
+    await _exportPdf(
+      context,
+      title: 'History Presensi',
+      userName: userName,
+      headers: _attHeaders,
+      rows: _attRows(data),
+      baseName: 'history_presensi',
+    );
   }
+
+  // ----------------------------- Izin / Sakit ----------------------------
+
+  static const _sickHeaders = [
+    'Jenis',
+    'Mulai',
+    'Selesai',
+    'Alasan',
+    'Lampiran',
+  ];
+
+  static List<List<String>> _sickRows(List<Map<String, dynamic>> d) => d
+      .map(
+        (r) => [
+          _s(r, 'leave_type'),
+          _s(r, 'start_date'),
+          _s(r, 'end_date'),
+          _s(r, 'reason'),
+          r['has_attachment'] == true ? 'Ada' : 'Tidak',
+        ],
+      )
+      .toList();
 
   static Future<void> exportSickCsv(
     BuildContext context,
     List<Map<String, dynamic>> data,
     String userName,
   ) async {
-    if (data.isEmpty) {
-      CustomSnackbar.error(context, 'Tidak ada data untuk di-export');
-      return;
-    }
-    final sb = StringBuffer();
-    sb.writeln('Riwayat Izin/Sakit - $userName');
-    sb.writeln('Jenis,Mulai,Selesai,Alasan,Lampiran');
-    for (final r in data) {
-      sb.writeln(
-        [
-          _csvEscape(r['leave_type']?.toString() ?? ''),
-          _csvEscape(r['start_date']?.toString() ?? ''),
-          _csvEscape(r['end_date']?.toString() ?? ''),
-          _csvEscape(r['reason']?.toString() ?? ''),
-          _csvEscape(r['has_attachment'] == true ? 'Ada' : 'Tidak'),
-        ].join(','),
-      );
-    }
-    await _saveToDownloads(
+    if (_empty(context, data)) return;
+    await _exportCsv(
       context,
-      Uint8List.fromList(utf8.encode(sb.toString())),
-      'riwayat_izin_sakit.csv',
-      'text/csv',
+      title: 'Riwayat Izin/Sakit',
+      userName: userName,
+      headers: _sickHeaders,
+      rows: _sickRows(data),
+      baseName: 'riwayat_izin_sakit',
     );
   }
 
@@ -179,65 +241,41 @@ class ExportService {
     List<Map<String, dynamic>> data,
     String userName,
   ) async {
-    if (data.isEmpty) {
-      CustomSnackbar.error(context, 'Tidak ada data untuk di-export');
-      return;
-    }
-    try {
-      final doc = pw.Document();
-      doc.addPage(
-        pw.Page(
-          pageFormat: PdfPageFormat.a4,
-          build: (context) => pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
-            children: [
-              pw.Text(
-                'Riwayat Izin / Sakit',
-                style: pw.TextStyle(
-                  fontSize: 20,
-                  fontWeight: pw.FontWeight.bold,
-                ),
-              ),
-              pw.Text('Karyawan: $userName'),
-              pw.SizedBox(height: 16),
-              pw.TableHelper.fromTextArray(
-                headers: const [
-                  'Jenis',
-                  'Mulai',
-                  'Selesai',
-                  'Alasan',
-                  'Lampiran',
-                ],
-                data: data
-                    .map(
-                      (r) => [
-                        r['leave_type']?.toString() ?? '',
-                        r['start_date']?.toString() ?? '',
-                        r['end_date']?.toString() ?? '',
-                        r['reason']?.toString() ?? '',
-                        r['has_attachment'] == true ? 'Ada' : 'Tidak',
-                      ],
-                    )
-                    .toList(),
-              ),
-            ],
-          ),
-        ),
-      );
-      final bytes = await doc.save();
-      if (!context.mounted) return;
-      await _saveToDownloads(
-        context,
-        bytes,
-        'riwayat_izin_sakit.pdf',
-        'application/pdf',
-      );
-    } catch (e) {
-      if (context.mounted) {
-        CustomSnackbar.error(context, 'Gagal membuat PDF: $e');
-      }
-    }
+    if (_empty(context, data)) return;
+    await _exportPdf(
+      context,
+      title: 'Riwayat Izin / Sakit',
+      userName: userName,
+      headers: _sickHeaders,
+      rows: _sickRows(data),
+      baseName: 'riwayat_izin_sakit',
+    );
   }
+
+  // -------------------------------- Cuti ---------------------------------
+
+  static const _leaveHeaders = [
+    'Jenis',
+    'Mulai',
+    'Selesai',
+    'Alasan',
+    'Status',
+  ];
+
+  static List<List<String>> _leaveRows(
+    List<Map<String, dynamic>> d,
+    String Function(Map<String, dynamic>) statusOf,
+  ) => d
+      .map(
+        (r) => [
+          _s(r, 'leave_type'),
+          _s(r, 'start_date'),
+          _s(r, 'end_date'),
+          _s(r, 'reason'),
+          statusOf(r),
+        ],
+      )
+      .toList();
 
   static Future<void> exportLeaveCsv(
     BuildContext context,
@@ -245,29 +283,14 @@ class ExportService {
     String userName,
     String Function(Map<String, dynamic>) statusOf,
   ) async {
-    if (data.isEmpty) {
-      CustomSnackbar.error(context, 'Tidak ada data untuk di-export');
-      return;
-    }
-    final sb = StringBuffer();
-    sb.writeln('Riwayat Cuti - $userName');
-    sb.writeln('Jenis,Mulai,Selesai,Alasan,Status');
-    for (final r in data) {
-      sb.writeln(
-        [
-          _csvEscape(r['leave_type']?.toString() ?? ''),
-          _csvEscape(r['start_date']?.toString() ?? ''),
-          _csvEscape(r['end_date']?.toString() ?? ''),
-          _csvEscape(r['reason']?.toString() ?? ''),
-          _csvEscape(statusOf(r)),
-        ].join(','),
-      );
-    }
-    await _saveToDownloads(
+    if (_empty(context, data)) return;
+    await _exportCsv(
       context,
-      Uint8List.fromList(utf8.encode(sb.toString())),
-      'riwayat_cuti.csv',
-      'text/csv',
+      title: 'Riwayat Cuti',
+      userName: userName,
+      headers: _leaveHeaders,
+      rows: _leaveRows(data, statusOf),
+      baseName: 'riwayat_cuti',
     );
   }
 
@@ -277,63 +300,54 @@ class ExportService {
     String userName,
     String Function(Map<String, dynamic>) statusOf,
   ) async {
-    if (data.isEmpty) {
-      CustomSnackbar.error(context, 'Tidak ada data untuk di-export');
-      return;
-    }
-    try {
-      final doc = pw.Document();
-      doc.addPage(
-        pw.Page(
-          pageFormat: PdfPageFormat.a4,
-          build: (context) => pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
-            children: [
-              pw.Text(
-                'Riwayat Cuti',
-                style: pw.TextStyle(
-                  fontSize: 20,
-                  fontWeight: pw.FontWeight.bold,
-                ),
-              ),
-              pw.Text('Karyawan: $userName'),
-              pw.SizedBox(height: 16),
-              pw.TableHelper.fromTextArray(
-                headers: const [
-                  'Jenis',
-                  'Mulai',
-                  'Selesai',
-                  'Alasan',
-                  'Status',
-                ],
-                data: data
-                    .map(
-                      (r) => [
-                        r['leave_type']?.toString() ?? '',
-                        r['start_date']?.toString() ?? '',
-                        r['end_date']?.toString() ?? '',
-                        r['reason']?.toString() ?? '',
-                        statusOf(r),
-                      ],
-                    )
-                    .toList(),
-              ),
-            ],
-          ),
-        ),
-      );
-      final bytes = await doc.save();
-      if (!context.mounted) return;
-      await _saveToDownloads(
-        context,
-        bytes,
-        'riwayat_cuti.pdf',
-        'application/pdf',
-      );
-    } catch (e) {
-      if (context.mounted) {
-        CustomSnackbar.error(context, 'Gagal membuat PDF: $e');
-      }
-    }
+    if (_empty(context, data)) return;
+    await _exportPdf(
+      context,
+      title: 'Riwayat Cuti',
+      userName: userName,
+      headers: _leaveHeaders,
+      rows: _leaveRows(data, statusOf),
+      baseName: 'riwayat_cuti',
+    );
+  }
+
+  // --------------------------- Log Aktivitas -----------------------------
+
+  static const _logHeaders = ['Tanggal', 'Log', 'Dibuat Pada'];
+
+  static List<List<String>> _logRows(List<Map<String, dynamic>> d) => d
+      .map((r) => [_s(r, 'activity_date'), _s(r, 'log'), _s(r, 'created_at')])
+      .toList();
+
+  static Future<void> exportActivityLogsCsv(
+    BuildContext context,
+    List<Map<String, dynamic>> data,
+    String userName,
+  ) async {
+    if (_empty(context, data)) return;
+    await _exportCsv(
+      context,
+      title: 'Log Aktivitas',
+      userName: userName,
+      headers: _logHeaders,
+      rows: _logRows(data),
+      baseName: 'log_aktivitas',
+    );
+  }
+
+  static Future<void> exportActivityLogsPdf(
+    BuildContext context,
+    List<Map<String, dynamic>> data,
+    String userName,
+  ) async {
+    if (_empty(context, data)) return;
+    await _exportPdf(
+      context,
+      title: 'Log Aktivitas',
+      userName: userName,
+      headers: _logHeaders,
+      rows: _logRows(data),
+      baseName: 'log_aktivitas',
+    );
   }
 }

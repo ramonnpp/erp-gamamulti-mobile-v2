@@ -9,6 +9,10 @@ import '../leave/sick_leave_history_screen.dart';
 import '../activity_log/activity_log_screen.dart';
 import '../profile/profile_screen.dart';
 
+enum _NavKind { screen, attendanceGroup, leaveGroup }
+
+enum _PopupGroup { none, attendance, leave }
+
 class MainNavigation extends StatefulWidget {
   const MainNavigation({super.key});
 
@@ -17,34 +21,157 @@ class MainNavigation extends StatefulWidget {
 }
 
 class _MainNavigationState extends State<MainNavigation>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   int _currentIndex = 0;
+  _PopupGroup _activePopup = _PopupGroup.none;
+  double? _popupAnchorCenterX;
+
+  final GlobalKey _attendanceTabKey = GlobalKey();
+  final GlobalKey _leaveTabKey = GlobalKey();
+
+  late Widget _activeScreen;
   late AnimationController _fadeController;
   late Animation<double> _fadeAnimation;
+
+  late AnimationController _popupController;
+  late Animation<double> _popupScale;
+  late Animation<double> _popupOpacity;
+  late Animation<Offset> _popupSlide;
+
+  static const List<Widget> _baseScreens = [
+    HomeScreen(), // 0. Home
+    AttendanceScreen(), // 1. Presensi
+    SickLeaveHistoryScreen(), // 2. Izin / Sakit
+    ActivityLogScreen(), // 3. Log Activity
+    ProfileScreen(), // 4. Profile
+  ];
+
+  final List<_NavItem> _items = const [
+    _NavItem(
+      icon: Icons.home_outlined,
+      selectedIcon: Icons.home_rounded,
+      label: 'Home',
+      kind: _NavKind.screen,
+      screenIndex: 0,
+    ),
+    _NavItem(
+      icon: Icons.location_on_outlined,
+      selectedIcon: Icons.location_on_rounded,
+      label: 'Presensi',
+      kind: _NavKind.attendanceGroup,
+    ),
+    _NavItem(
+      icon: Icons.assignment_outlined,
+      selectedIcon: Icons.assignment_rounded,
+      label: 'Izin',
+      kind: _NavKind.leaveGroup,
+    ),
+    _NavItem(
+      icon: Icons.timeline_outlined,
+      selectedIcon: Icons.timeline_rounded,
+      label: 'Log Activity',
+      kind: _NavKind.screen,
+      screenIndex: 3,
+    ),
+    _NavItem(
+      icon: Icons.person_outline_rounded,
+      selectedIcon: Icons.person_rounded,
+      label: 'Profile',
+      kind: _NavKind.screen,
+      screenIndex: 4,
+    ),
+  ];
 
   @override
   void initState() {
     super.initState();
+    _activeScreen = _baseScreens[0];
+
     _fadeController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 250),
+      duration: const Duration(milliseconds: 220),
     );
     _fadeAnimation = CurvedAnimation(
       parent: _fadeController,
       curve: Curves.easeInOut,
     );
     _fadeController.forward();
+
+    _popupController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 280),
+      reverseDuration: const Duration(milliseconds: 180),
+    );
+
+    final curvedIn = CurvedAnimation(
+      parent: _popupController,
+      curve: Curves.easeOutBack,
+      reverseCurve: Curves.easeInCubic,
+    );
+
+    _popupScale = Tween<double>(begin: 0.78, end: 1.0).animate(curvedIn);
+    _popupOpacity = CurvedAnimation(
+      parent: _popupController,
+      curve: const Interval(0.0, 0.75, curve: Curves.easeOut),
+      reverseCurve: Curves.easeIn,
+    );
+    _popupSlide = Tween<Offset>(
+      begin: const Offset(0, 0.22),
+      end: Offset.zero,
+    ).animate(curvedIn);
   }
 
   @override
   void dispose() {
     _fadeController.dispose();
+    _popupController.dispose();
     super.dispose();
   }
 
+  double? _measureTabCenterX(GlobalKey key) {
+    final ctx = key.currentContext;
+    if (ctx == null) return null;
+    final box = ctx.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return null;
+    final topLeft = box.localToGlobal(Offset.zero);
+    return topLeft.dx + (box.size.width / 2);
+  }
+
+  void _openPopup(_PopupGroup group) {
+    final anchorKey = group == _PopupGroup.attendance
+        ? _attendanceTabKey
+        : _leaveTabKey;
+    final centerX = _measureTabCenterX(anchorKey);
+
+    setState(() {
+      _activePopup = group;
+      if (centerX != null) {
+        _popupAnchorCenterX = centerX;
+      }
+    });
+    _popupController.forward(from: 0.0);
+  }
+
+  Future<void> _closePopup({VoidCallback? afterClose}) async {
+    if (_activePopup == _PopupGroup.none) {
+      afterClose?.call();
+      return;
+    }
+    await _popupController.reverse();
+    if (!mounted) return;
+    setState(() {
+      _activePopup = _PopupGroup.none;
+    });
+    afterClose?.call();
+  }
+
   Future<bool> _onWillPop() async {
+    if (_activePopup != _PopupGroup.none) {
+      await _closePopup();
+      return false;
+    }
     if (_currentIndex != 0) {
-      _goTo(0);
+      _switchToScreen(widget: const HomeScreen(), navIndex: 0);
       return false;
     }
 
@@ -166,47 +293,269 @@ class _MainNavigationState extends State<MainNavigation>
     return confirmed ?? false;
   }
 
-  void _goTo(int index) {
-    if (index == _currentIndex) return;
+  void _switchToScreen({required Widget widget, required int navIndex}) {
     HapticFeedback.selectionClick();
+    final sameTab = navIndex == _currentIndex;
+
+    setState(() {
+      _currentIndex = navIndex;
+    });
+
+    if (sameTab) {
+      setState(() => _activeScreen = widget);
+      return;
+    }
 
     _fadeController.reverse().then((_) {
+      if (!mounted) return;
       setState(() {
-        _currentIndex = index;
+        _activeScreen = widget;
       });
       _fadeController.forward();
     });
   }
 
-  // Daftar Screen (6 Menu Utama)
-  final List<Widget> _screens = [
-    const HomeScreen(), // 0. Home
-    const AttendanceScreen(), // 1. Presensi
-    const SickLeaveHistoryScreen(), // 2. Izin/Sakit
-    const LeaveHistoryScreen(), // 3. Permohonan Cuti
-    const AttendanceHistoryScreen(), // 4. History
-    const ActivityLogScreen(), // 5. Log Aktivitas
-    const ProfileScreen(), // 6. Profil
-  ];
+  void _onNavTap(int index) {
+    final item = _items[index];
+    HapticFeedback.selectionClick();
 
-  // Daftar Menu & Ikon
-  final List<_NavItem> _items = [
-    _NavItem(Icons.home_outlined, Icons.home_rounded, 'Home'),
-    _NavItem(Icons.location_on_outlined, Icons.location_on_rounded, 'Presensi'),
-    _NavItem(Icons.copy_all_outlined, Icons.copy_all_rounded, 'Izin/Sakit'),
-    _NavItem(
-      Icons.calendar_month_outlined,
-      Icons.calendar_month_rounded,
-      'Cuti',
-    ),
-    _NavItem(Icons.description_outlined, Icons.description_rounded, 'History'),
-    _NavItem(Icons.timeline_outlined, Icons.timeline_rounded, 'Log'),
-    _NavItem(Icons.person_outline_rounded, Icons.person_rounded, 'Profil'),
-  ];
+    if (item.kind == _NavKind.attendanceGroup) {
+      if (_activePopup == _PopupGroup.attendance) {
+        _closePopup();
+      } else {
+        _openPopup(_PopupGroup.attendance);
+      }
+      return;
+    }
+
+    if (item.kind == _NavKind.leaveGroup) {
+      if (_activePopup == _PopupGroup.leave) {
+        _closePopup();
+      } else {
+        _openPopup(_PopupGroup.leave);
+      }
+      return;
+    }
+
+    _closePopup(
+      afterClose: () {
+        if (!mounted) return;
+        _switchToScreen(
+          widget: _baseScreens[item.screenIndex!],
+          navIndex: index,
+        );
+      },
+    );
+  }
+
+  List<_PopupOption> _currentPopupOptions() {
+    if (_activePopup == _PopupGroup.attendance) {
+      return [
+        _PopupOption(
+          icon: Icons.location_on_rounded,
+          label: 'Presensi',
+          accentColor: AppTheme.primaryColor,
+          onTap: () => _closePopup(
+            afterClose: () {
+              if (!mounted) return;
+              _switchToScreen(widget: const AttendanceScreen(), navIndex: 1);
+            },
+          ),
+        ),
+        _PopupOption(
+          icon: Icons.history_rounded,
+          label: 'History',
+          accentColor: AppTheme.accentColor,
+          onTap: () => _closePopup(
+            afterClose: () {
+              if (!mounted) return;
+              _switchToScreen(
+                widget: const AttendanceHistoryScreen(),
+                navIndex: 1,
+              );
+            },
+          ),
+        ),
+      ];
+    }
+
+    if (_activePopup == _PopupGroup.leave) {
+      return [
+        _PopupOption(
+          icon: Icons.medical_services_outlined,
+          label: 'Izin / Sakit',
+          accentColor: AppTheme.primaryColor,
+          onTap: () => _closePopup(
+            afterClose: () {
+              if (!mounted) return;
+              _switchToScreen(
+                widget: const SickLeaveHistoryScreen(),
+                navIndex: 2,
+              );
+            },
+          ),
+        ),
+        _PopupOption(
+          icon: Icons.calendar_month_rounded,
+          label: 'Cuti',
+          accentColor: AppTheme.accentColor,
+          onTap: () => _closePopup(
+            afterClose: () {
+              if (!mounted) return;
+              _switchToScreen(widget: const LeaveHistoryScreen(), navIndex: 2);
+            },
+          ),
+        ),
+      ];
+    }
+
+    return const [];
+  }
+
+  Widget _buildFloatingPill(_PopupOption option) {
+    const radius = BorderRadius.all(Radius.circular(22));
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: radius,
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF0F172A).withValues(alpha: 0.10),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: radius,
+        child: ColoredBox(
+          color: Colors.white,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: radius,
+              border: Border.all(
+                color: option.accentColor.withValues(alpha: 0.22),
+                width: 1.2,
+              ),
+            ),
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: option.onTap,
+                splashColor: option.accentColor.withValues(alpha: 0.08),
+                highlightColor: option.accentColor.withValues(alpha: 0.04),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 11,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 32,
+                        height: 32,
+                        decoration: BoxDecoration(
+                          color: option.accentColor.withValues(alpha: 0.14),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          option.icon,
+                          color: option.accentColor,
+                          size: 17,
+                        ),
+                      ),
+                      const SizedBox(width: 9),
+                      Text(
+                        option.label,
+                        maxLines: 1,
+                        softWrap: false,
+                        style: const TextStyle(
+                          color: AppTheme.textPrimary,
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPopupOverlay(double bottomPadding, double screenWidth) {
+    final options = _currentPopupOptions();
+    if (_activePopup == _PopupGroup.none || options.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final double navBottomMargin = bottomPadding > 0 ? bottomPadding + 6 : 16;
+    final double bottomOffset = navBottomMargin + 88;
+    final double fallbackCenterX =
+        screenWidth * (_activePopup == _PopupGroup.attendance ? 0.30 : 0.50);
+    final double centerX = _popupAnchorCenterX ?? fallbackCenterX;
+
+    const double estimatedClusterWidth = 256;
+    final double rawLeft = centerX - (estimatedClusterWidth / 2);
+    final double clampedLeft = rawLeft.clamp(
+      16.0,
+      (screenWidth - estimatedClusterWidth - 16.0).clamp(16.0, double.infinity),
+    );
+
+    return Positioned.fill(
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: GestureDetector(
+              onTap: () => _closePopup(),
+              behavior: HitTestBehavior.translucent,
+              child: const SizedBox.expand(),
+            ),
+          ),
+          Positioned(
+            left: clampedLeft,
+            bottom: bottomOffset,
+            child: FadeTransition(
+              opacity: _popupOpacity,
+              child: SlideTransition(
+                position: _popupSlide,
+                child: ScaleTransition(
+                  scale: _popupScale,
+                  alignment: Alignment.bottomCenter,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _buildFloatingPill(options[0]),
+                      const SizedBox(width: 10),
+                      _buildFloatingPill(options[1]),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  GlobalKey? _tabKeyForIndex(int index) {
+    final kind = _items[index].kind;
+    if (kind == _NavKind.attendanceGroup) return _attendanceTabKey;
+    if (kind == _NavKind.leaveGroup) return _leaveTabKey;
+    return null;
+  }
 
   @override
   Widget build(BuildContext context) {
-    final bottomPadding = MediaQuery.of(context).padding.bottom;
+    final mediaQuery = MediaQuery.of(context);
+    final bottomPadding = mediaQuery.padding.bottom;
+    final screenWidth = mediaQuery.size.width;
 
     return PopScope(
       canPop: false,
@@ -219,9 +568,11 @@ class _MainNavigationState extends State<MainNavigation>
       },
       child: Scaffold(
         extendBody: true,
-        body: FadeTransition(
-          opacity: _fadeAnimation,
-          child: _screens[_currentIndex],
+        body: Stack(
+          children: [
+            FadeTransition(opacity: _fadeAnimation, child: _activeScreen),
+            _buildPopupOverlay(bottomPadding, screenWidth),
+          ],
         ),
         bottomNavigationBar: Padding(
           padding: EdgeInsets.fromLTRB(
@@ -231,59 +582,89 @@ class _MainNavigationState extends State<MainNavigation>
             bottomPadding > 0 ? bottomPadding + 6 : 16,
           ),
           child: Container(
-            height: 74,
-            padding: const EdgeInsets.symmetric(horizontal: 8),
+            height: 76,
+            padding: const EdgeInsets.symmetric(horizontal: 10),
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(36),
+              border: Border.all(
+                color: const Color(0xFFE2E8F0).withValues(alpha: 0.75),
+                width: 1,
+              ),
               boxShadow: [
                 BoxShadow(
-                  color: const Color(0xFF0F172A).withValues(alpha: 0.1),
-                  blurRadius: 20,
-                  offset: const Offset(0, 6),
+                  color: const Color(0xFF0F172A).withValues(alpha: 0.09),
+                  blurRadius: 22,
+                  offset: const Offset(0, 8),
                 ),
               ],
             ),
-            // Menggunakan Row dengan spaceAround agar pas di tengah dan terbagi rata di semua layar HP
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: List.generate(_items.length, (index) {
                 final item = _items[index];
-                final selected = index == _currentIndex;
+                final isPopupOpen =
+                    (item.kind == _NavKind.attendanceGroup &&
+                        _activePopup == _PopupGroup.attendance) ||
+                    (item.kind == _NavKind.leaveGroup &&
+                        _activePopup == _PopupGroup.leave);
+                final selected = index == _currentIndex || isPopupOpen;
 
-                return GestureDetector(
-                  onTap: () => _goTo(index),
-                  behavior: HitTestBehavior.opaque,
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 300),
-                    curve: Curves.easeOutCubic,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 8,
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          selected ? item.selectedIcon : item.icon,
-                          color: selected
-                              ? AppTheme.primaryColor
-                              : AppTheme.textSecondary,
-                          size: 24,
+                return Expanded(
+                  child: GestureDetector(
+                    key: _tabKeyForIndex(index),
+                    onTap: () => _onNavTap(index),
+                    behavior: HitTestBehavior.opaque,
+                    child: Center(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 4,
+                          vertical: 8,
                         ),
-                        const SizedBox(height: 4),
-                        // Indikator titik/lengkung kecil di bawah ikon yang aktif (seperti di referensi gambar)
-                        AnimatedContainer(
-                          duration: const Duration(milliseconds: 300),
-                          width: selected ? 5 : 0,
-                          height: selected ? 5 : 0,
-                          decoration: BoxDecoration(
-                            color: AppTheme.primaryColor,
-                            shape: BoxShape.circle,
-                          ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            AnimatedSwitcher(
+                              duration: const Duration(milliseconds: 180),
+                              transitionBuilder: (child, anim) =>
+                                  ScaleTransition(scale: anim, child: child),
+                              child: Icon(
+                                key: ValueKey<String>(
+                                  '${index}_${isPopupOpen}_$selected',
+                                ),
+                                isPopupOpen
+                                    ? Icons.close_rounded
+                                    : (selected
+                                          ? item.selectedIcon
+                                          : item.icon),
+                                color: selected
+                                    ? AppTheme.primaryColor
+                                    : AppTheme.textSecondary,
+                                size: 22,
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              item.label,
+                              maxLines: 1,
+                              softWrap: false,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 10,
+                                letterSpacing: -0.1,
+                                fontWeight: selected
+                                    ? FontWeight.w700
+                                    : FontWeight.w500,
+                                color: selected
+                                    ? AppTheme.primaryColor
+                                    : AppTheme.textSecondary,
+                              ),
+                            ),
+                          ],
                         ),
-                      ],
+                      ),
                     ),
                   ),
                 );
@@ -300,5 +681,28 @@ class _NavItem {
   final IconData icon;
   final IconData selectedIcon;
   final String label;
-  const _NavItem(this.icon, this.selectedIcon, this.label);
+  final _NavKind kind;
+  final int? screenIndex;
+
+  const _NavItem({
+    required this.icon,
+    required this.selectedIcon,
+    required this.label,
+    required this.kind,
+    this.screenIndex,
+  });
+}
+
+class _PopupOption {
+  final IconData icon;
+  final String label;
+  final Color accentColor;
+  final VoidCallback onTap;
+
+  const _PopupOption({
+    required this.icon,
+    required this.label,
+    required this.accentColor,
+    required this.onTap,
+  });
 }

@@ -5,6 +5,8 @@ import '../../services/database_service.dart';
 import 'add_activity_log_sheet.dart';
 import 'activity_log_detail_sheet.dart';
 import '../../widgets/custom_snackbar.dart';
+import '../../widgets/export_menu_button.dart';
+import '../../services/export_service.dart';
 
 class ActivityLogScreen extends StatefulWidget {
   const ActivityLogScreen({super.key});
@@ -416,6 +418,7 @@ class _ActivityLogScreenState extends State<ActivityLogScreen> {
     final safeBottom = MediaQuery.of(context).padding.bottom;
     final navBarHeight = 74.0 + (safeBottom > 0 ? safeBottom : 16.0);
     final bottomPad = 16.0 + navBarHeight + 16.0;
+    final userName = DatabaseService().getCurrentUser()?['name']?.toString() ?? 'Karyawan';
 
     return Scaffold(
       backgroundColor: AppTheme.backgroundColor,
@@ -426,6 +429,11 @@ class _ActivityLogScreenState extends State<ActivityLogScreen> {
         elevation: 0,
         centerTitle: true,
         actions: [
+          ExportMenuButton(
+            onCsv: (ctx) => ExportService.exportActivityLogsCsv(ctx, _filteredLogs, userName),
+            onPdf: (ctx) => ExportService.exportActivityLogsPdf(ctx, _filteredLogs, userName),
+          ),
+          const SizedBox(width: 4),
           GestureDetector(
             onTap: () => setState(() => _isFilterExpanded = !_isFilterExpanded),
             child: Container(

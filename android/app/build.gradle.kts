@@ -30,6 +30,11 @@ android {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
+
+            // Matikan R8/minify supaya class bawaan Android & class JNI
+            // (mis. android.content.Context) tidak ikut terpotong/ter-rename.
+            isMinifyEnabled = false
+            isShrinkResources = false
         }
     }
 }
