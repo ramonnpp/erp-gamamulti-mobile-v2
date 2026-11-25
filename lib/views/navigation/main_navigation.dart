@@ -12,6 +12,8 @@ import '../profile/profile_screen.dart';
 import '../admin/admin_home_screen.dart';
 import '../admin/admin_attendance_screen.dart';
 import '../admin/admin_leave_screen.dart';
+import '../admin/admin_activity_log_screen.dart';
+import '../admin/admin_announcement_screen.dart';
 
 enum _NavKind { screen, attendanceGroup, leaveGroup }
 
@@ -50,7 +52,7 @@ class _MainNavigationState extends State<MainNavigation>
         _NavItem(
           icon: Icons.dashboard_outlined,
           selectedIcon: Icons.dashboard_rounded,
-          label: 'Home Admin',
+          label: 'Home',
           kind: _NavKind.screen,
           screenIndex: 0,
         ),
@@ -76,11 +78,18 @@ class _MainNavigationState extends State<MainNavigation>
           screenIndex: 3,
         ),
         _NavItem(
-          icon: Icons.person_outline_rounded,
-          selectedIcon: Icons.person_rounded,
-          label: 'Profile',
+          icon: Icons.campaign_outlined,
+          selectedIcon: Icons.campaign_rounded,
+          label: 'Pengumuman',
           kind: _NavKind.screen,
           screenIndex: 4,
+        ),
+        _NavItem(
+          icon: Icons.person_outline_rounded,
+          selectedIcon: Icons.person_rounded,
+          label: 'Profil',
+          kind: _NavKind.screen,
+          screenIndex: 5,
         ),
       ];
     }
@@ -131,8 +140,10 @@ class _MainNavigationState extends State<MainNavigation>
         case 2:
           return const AdminLeaveScreen();
         case 3:
-          return const ActivityLogScreen();
+          return const AdminActivityLogScreen();
         case 4:
+          return const AdminAnnouncementScreen();
+        case 5:
           return const ProfileScreen();
         default:
           return const AdminHomeScreen();

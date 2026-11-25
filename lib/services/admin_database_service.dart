@@ -10,8 +10,11 @@ class AdminDatabaseService {
 
   void _ensureAdmin() {
     final currentUser = DatabaseService().getCurrentUser();
-    if (currentUser == null || currentUser['role']?.toString().toLowerCase() != 'admin') {
-      throw Exception('Akses ditolak: hanya admin yang dapat mengakses layanan ini.');
+    if (currentUser == null ||
+        currentUser['role']?.toString().toLowerCase() != 'admin') {
+      throw Exception(
+        'Akses ditolak: hanya admin yang dapat mengakses layanan ini.',
+      );
     }
   }
 
@@ -164,7 +167,9 @@ class AdminDatabaseService {
       final conn = await DatabaseService().connect();
       // Ambil data sebelum dihapus untuk audit
       final beforeResult = await conn.execute(
-        Sql.named('SELECT user_id, date, type, timestamp FROM attendance WHERE id = @id'),
+        Sql.named(
+          'SELECT user_id, date, type, timestamp FROM attendance WHERE id = @id',
+        ),
         parameters: {'id': attendanceId},
       );
       final before = beforeResult.isNotEmpty ? beforeResult.first : <dynamic>[];
@@ -245,7 +250,9 @@ class AdminDatabaseService {
     try {
       final conn = await DatabaseService().connect();
       final beforeResult = await conn.execute(
-        Sql.named('SELECT user_id, leave_type FROM leave_requests WHERE id = @id'),
+        Sql.named(
+          'SELECT user_id, leave_type FROM leave_requests WHERE id = @id',
+        ),
         parameters: {'id': requestId},
       );
       final before = beforeResult.isNotEmpty ? beforeResult.first : <dynamic>[];
@@ -279,19 +286,23 @@ class AdminDatabaseService {
       if (userId != null) {
         result = await conn.execute(
           Sql.named('''
-            SELECT id, user_id, log_content, activity_date, created_at
-            FROM activity_logs
-            WHERE user_id = @userId
-            ORDER BY created_at DESC
+            SELECT a.id, a.user_id, a.log_content, a.activity_date, a.created_at,
+                   u.name AS user_name, u.role AS user_role
+            FROM activity_logs a
+            JOIN users u ON u.id = a.user_id
+            WHERE a.user_id = @userId
+            ORDER BY a.created_at DESC
           '''),
           parameters: {'userId': userId},
         );
       } else {
         result = await conn.execute(
           Sql.named('''
-            SELECT id, user_id, log_content, activity_date, created_at
-            FROM activity_logs
-            ORDER BY created_at DESC
+            SELECT a.id, a.user_id, a.log_content, a.activity_date, a.created_at,
+                   u.name AS user_name, u.role AS user_role
+            FROM activity_logs a
+            JOIN users u ON u.id = a.user_id
+            ORDER BY a.created_at DESC
           '''),
         );
       }
@@ -303,6 +314,8 @@ class AdminDatabaseService {
           'log': row[2]?.toString() ?? '',
           'activity_date': row[3]?.toString() ?? '',
           'created_at': row[4]?.toString() ?? '',
+          'user_name': row[5]?.toString() ?? 'Karyawan',
+          'user_role': row[6]?.toString() ?? 'Staff',
         });
       }
       return rows;
@@ -321,7 +334,9 @@ class AdminDatabaseService {
     try {
       final conn = await DatabaseService().connect();
       final beforeResult = await conn.execute(
-        Sql.named('SELECT user_id, log_content FROM activity_logs WHERE id = @id'),
+        Sql.named(
+          'SELECT user_id, log_content FROM activity_logs WHERE id = @id',
+        ),
         parameters: {'id': logId},
       );
       final before = beforeResult.isNotEmpty ? beforeResult.first : <dynamic>[];
@@ -353,13 +368,19 @@ class AdminDatabaseService {
       final conn = await DatabaseService().connect();
 
       final attRes = await conn.execute(
-        Sql.named('SELECT COUNT(DISTINCT user_id) FROM attendance WHERE date = CURRENT_DATE'),
+        Sql.named(
+          'SELECT COUNT(DISTINCT user_id) FROM attendance WHERE date = CURRENT_DATE',
+        ),
       );
       final leaveRes = await conn.execute(
-        Sql.named('SELECT COUNT(*) FROM sick_leaves WHERE CURRENT_DATE BETWEEN start_date AND end_date'),
+        Sql.named(
+          'SELECT COUNT(*) FROM sick_leaves WHERE CURRENT_DATE BETWEEN start_date AND end_date',
+        ),
       );
       final logRes = await conn.execute(
-        Sql.named('SELECT COUNT(DISTINCT user_id) FROM activity_logs WHERE activity_date = CURRENT_DATE'),
+        Sql.named(
+          'SELECT COUNT(DISTINCT user_id) FROM activity_logs WHERE activity_date = CURRENT_DATE',
+        ),
       );
 
       return {
@@ -388,16 +409,18 @@ class AdminDatabaseService {
         '''),
       );
       return result
-          .map((row) => {
-                'id': row[0],
-                'title': row[1],
-                'content': row[2],
-                'category': row[3],
-                'published_at': row[4]?.toString(),
-                'expired_at': row[5]?.toString(),
-                'created_by': row[6],
-                'created_at': row[7]?.toString() ?? '',
-              })
+          .map(
+            (row) => {
+              'id': row[0],
+              'title': row[1],
+              'content': row[2],
+              'category': row[3],
+              'published_at': row[4]?.toString(),
+              'expired_at': row[5]?.toString(),
+              'created_by': row[6],
+              'created_at': row[7]?.toString() ?? '',
+            },
+          )
           .toList();
     } catch (e) {
       debugPrint('Error ambil semua announcements: $e');
@@ -414,27 +437,37 @@ class AdminDatabaseService {
         Sql.named('''
           SELECT id, title, content, category, published_at, expired_at, created_by, created_at
           FROM announcements
-          WHERE (published_at IS NULL OR published_at <= CURRENT_TIMESTAMP)
-            AND (expired_at IS NULL OR expired_at > CURRENT_TIMESTAMP)
+          WHERE (published_at IS NULL OR published_at <= (NOW() AT TIME ZONE 'Asia/Jakarta'))
+            AND (expired_at IS NULL OR expired_at > (NOW() AT TIME ZONE 'Asia/Jakarta'))
           ORDER BY created_at DESC
         '''),
       );
       return result
-          .map((row) => {
-                'id': row[0],
-                'title': row[1],
-                'content': row[2],
-                'category': row[3],
-                'published_at': row[4]?.toString(),
-                'expired_at': row[5]?.toString(),
-                'created_by': row[6],
-                'created_at': row[7]?.toString() ?? '',
-              })
+          .map(
+            (row) => {
+              'id': row[0],
+              'title': row[1],
+              'content': row[2],
+              'category': row[3],
+              'published_at': row[4]?.toString(),
+              'expired_at': row[5]?.toString(),
+              'created_by': row[6],
+              'created_at': row[7]?.toString() ?? '',
+            },
+          )
           .toList();
     } catch (e) {
       debugPrint('Error ambil announcements aktif: $e');
       return [];
     }
+  }
+
+  /// Format jam apa adanya (waktu lokal/WIB) tanpa konversi UTC.
+  String? _wallClock(DateTime? d) {
+    if (d == null) return null;
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${d.year.toString().padLeft(4, '0')}-${two(d.month)}-${two(d.day)} '
+        '${two(d.hour)}:${two(d.minute)}:${two(d.second)}';
   }
 
   /// Buat pengumuman baru.
@@ -454,14 +487,14 @@ class AdminDatabaseService {
           INSERT INTO announcements
             (title, content, category, published_at, expired_at, created_by, created_at)
           VALUES
-            (@title, @content, @category, @publishedAt, @expiredAt, @createdBy, CURRENT_TIMESTAMP)
+            (@title, @content, @category, CAST(@publishedAt AS timestamp), CAST(@expiredAt AS timestamp), @createdBy, CURRENT_TIMESTAMP)
         '''),
         parameters: {
           'title': title,
           'content': content,
           'category': category,
-          'publishedAt': publishedAt?.toUtc(),
-          'expiredAt': expiredAt?.toUtc(),
+          'publishedAt': _wallClock(publishedAt),
+          'expiredAt': _wallClock(expiredAt),
           'createdBy': createdBy,
         },
       );
@@ -491,8 +524,8 @@ class AdminDatabaseService {
           SET title         = COALESCE(@title, title),
               content       = COALESCE(@content, content),
               category      = COALESCE(@category, category),
-              published_at  = COALESCE(@publishedAt, published_at),
-              expired_at    = COALESCE(@expiredAt, expired_at),
+              published_at  = COALESCE(CAST(@publishedAt AS timestamp), published_at),
+              expired_at    = COALESCE(CAST(@expiredAt AS timestamp), expired_at),
               updated_at    = CURRENT_TIMESTAMP
           WHERE id = @id
         '''),
@@ -501,8 +534,8 @@ class AdminDatabaseService {
           'title': title,
           'content': content,
           'category': category,
-          'publishedAt': publishedAt?.toUtc(),
-          'expiredAt': expiredAt?.toUtc(),
+          'publishedAt': _wallClock(publishedAt),
+          'expiredAt': _wallClock(expiredAt),
         },
       );
       return true;
@@ -524,7 +557,9 @@ class AdminDatabaseService {
         Sql.named('SELECT title FROM announcements WHERE id = @id'),
         parameters: {'id': announcementId},
       );
-      final beforeTitle = beforeResult.isNotEmpty ? beforeResult.first[0] : null;
+      final beforeTitle = beforeResult.isNotEmpty
+          ? beforeResult.first[0]
+          : null;
 
       await conn.execute(
         Sql.named('DELETE FROM announcements WHERE id = @id'),

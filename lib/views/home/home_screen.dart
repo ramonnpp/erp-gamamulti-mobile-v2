@@ -66,7 +66,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final userId = currentUser?['id'] ?? 1;
     final data = await db.getTodayAttendance(userId);
     final info = await db.getTodayLeaveInfo();
-    final ann = await db.getAnnouncements();
+    final ann = await db.getActiveAnnouncements();
     await profileRefresh;
 
     if (!mounted) return;

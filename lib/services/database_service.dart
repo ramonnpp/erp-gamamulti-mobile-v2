@@ -673,7 +673,45 @@ class DatabaseService {
     }
   }
 
-  // Ambil pengumuman aktif
+  // Ambil pengumuman aktif berdasarkan rentang waktu published_at dan expired_at
+  Future<List<Map<String, dynamic>>> getActiveAnnouncements() async {
+    try {
+      final conn = await connect();
+      final result = await conn.execute(
+        Sql.named('''
+          SELECT id, title, content, category, published_at, expired_at, created_at
+          FROM announcements
+          WHERE is_active = TRUE
+            AND (
+              (published_at IS NULL AND expired_at IS NULL)
+              OR (published_at IS NOT NULL AND expired_at IS NOT NULL AND CURRENT_TIMESTAMP BETWEEN published_at AND expired_at)
+              OR (published_at IS NOT NULL AND expired_at IS NULL AND CURRENT_TIMESTAMP >= published_at)
+              OR (published_at IS NULL AND expired_at IS NOT NULL AND CURRENT_TIMESTAMP <= expired_at)
+            )
+          ORDER BY created_at DESC
+          LIMIT 10
+        '''),
+      );
+      List<Map<String, dynamic>> list = [];
+      for (final row in result) {
+        list.add({
+          'id': row[0],
+          'title': row[1],
+          'content': row[2],
+          'category': row[3]?.toString(),
+          'published_at': row[4]?.toString(),
+          'expired_at': row[5]?.toString(),
+          'created_at': row[6] != null ? _formatDate(row[6]) : null,
+        });
+      }
+      return list;
+    } catch (e) {
+      debugPrint('Error ambil pengumuman aktif: $e');
+      return getAnnouncements(); // fallback ke query dasar
+    }
+  }
+
+  // Ambil pengumuman aktif (legacy/fallback)
   Future<List<Map<String, dynamic>>> getAnnouncements() async {
     try {
       final conn = await connect();
