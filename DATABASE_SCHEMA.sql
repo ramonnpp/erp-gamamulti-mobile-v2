@@ -33,12 +33,31 @@ CREATE TABLE IF NOT EXISTS announcements (
     id SERIAL PRIMARY KEY,
     title VARCHAR(255) NOT NULL,
     content TEXT NOT NULL,
+    category VARCHAR(100),
+    published_at TIMESTAMP,
+    expired_at TIMESTAMP,
     created_by INT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     is_active BOOLEAN DEFAULT TRUE,
     FOREIGN KEY (created_by) REFERENCES users (id) ON DELETE CASCADE
 );
+
+-- 3b. TABEL ADMIN_AUDIT_LOGS (Riwayat edit/hapus oleh Admin)
+CREATE TABLE IF NOT EXISTS admin_audit_logs (
+    id SERIAL PRIMARY KEY,
+    admin_id INT NOT NULL,
+    action VARCHAR(50) NOT NULL,
+    target_table VARCHAR(100) NOT NULL,
+    target_id INT NOT NULL,
+    details JSONB,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (admin_id) REFERENCES users (id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_admin_audit_logs_admin_id ON admin_audit_logs (admin_id);
+
+CREATE INDEX IF NOT EXISTS idx_admin_audit_logs_target ON admin_audit_logs (target_table, target_id);
 
 -- 4. TABEL LEAVE_REQUESTS (Permintaan Cuti)
 CREATE TABLE IF NOT EXISTS leave_requests (

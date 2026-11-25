@@ -258,9 +258,16 @@ class _ProfileScreenState extends State<ProfileScreen>
       CustomSnackbar.error(context, 'Nama tidak boleh kosong');
       return;
     }
+    final desiredRole = _roleController.text.trim();
+    final currentUser = DatabaseService().getCurrentUser();
+    final currentRole = currentUser?['role'] as String? ?? '';
+    // Tolak jika user biasa mencoba mengatur role ke 'admin'
+    if (desiredRole.toLowerCase() == 'admin' && currentRole.toLowerCase() != 'admin') {
+      CustomSnackbar.error(context, 'Tidak dapat menaikkan role menjadi admin melalui profil');
+      return;
+    }
     setState(() => _saving = true);
     HapticFeedback.mediumImpact();
-    final currentUser = DatabaseService().getCurrentUser();
     final userId = currentUser?['id'];
     bool ok = true;
     if (userId is int) {
@@ -268,7 +275,7 @@ class _ProfileScreenState extends State<ProfileScreen>
         userId: userId,
         name: _nameController.text.trim(),
         phone: _phoneController.text.trim(),
-        role: _roleController.text.trim(),
+        role: desiredRole,
         profileImageBytes: _imageChanged ? _imageBytes : null,
       );
     }
@@ -339,6 +346,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                 setDialogState(() => error = 'Gagal mengganti password');
                 return;
               }
+              if (!ctx.mounted) return;
               Navigator.pop(ctx);
               if (!mounted) return;
               CustomSnackbar.success(context, 'Password berhasil diubah');
@@ -1127,21 +1135,40 @@ class _ProfileScreenState extends State<ProfileScreen>
   }
 
   Widget _roleField() {
-    const roles = ['Employee', 'Manager', 'Admin', 'HR'];
-    final current = roles.contains(_roleController.text)
+    // User biasa: tampilkan role non-admin saja. Admin: tampilkan semua tapi kunci field.
+    final isAdmin = _roleController.text.toLowerCase() == 'admin';
+    final availableRoles = isAdmin
+        ? const ['Employee', 'Manager', 'Admin', 'HR']
+        : const ['Employee', 'Manager', 'HR'];
+    final current = availableRoles.contains(_roleController.text)
         ? _roleController.text
         : 'Employee';
+    final isDisabled = _isEditing && isAdmin;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Role / Jabatan',
-          style: TextStyle(
-            fontWeight: FontWeight.w700,
-            fontSize: 11.5,
-            color: AppTheme.textSecondary,
-          ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              'Role / Jabatan',
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                fontSize: 11.5,
+                color: AppTheme.textSecondary,
+              ),
+            ),
+            if (_isEditing && isAdmin)
+              const Text(
+                '(hanya dapat diubah oleh Admin lain)',
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 10,
+                  color: AppTheme.textSecondary,
+                ),
+              ),
+          ],
         ),
         const SizedBox(height: 6),
         AnimatedContainer(
@@ -1149,13 +1176,19 @@ class _ProfileScreenState extends State<ProfileScreen>
           height: 48,
           padding: const EdgeInsets.symmetric(horizontal: 12),
           decoration: BoxDecoration(
-            color: _isEditing ? Colors.white : const Color(0xFFF8FAFC),
+            color: isDisabled
+                ? const Color(0xFFF8FAFC)
+                : _isEditing
+                    ? Colors.white
+                    : const Color(0xFFF8FAFC),
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: _isEditing
-                  ? AppTheme.primaryColor.withValues(alpha: 0.5)
-                  : const Color(0xFFE2E8F0),
-              width: _isEditing ? 1.2 : 1.0,
+              color: isDisabled
+                  ? const Color(0xFFE2E8F0)
+                  : _isEditing
+                      ? AppTheme.primaryColor.withValues(alpha: 0.5)
+                      : const Color(0xFFE2E8F0),
+              width: isDisabled ? 1.0 : _isEditing ? 1.2 : 1.0,
             ),
           ),
           child: DropdownButtonHideUnderline(
@@ -1174,7 +1207,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                   color: AppTheme.primaryColor,
                 ),
               ),
-              items: roles
+              items: availableRoles
                   .map(
                     (r) => DropdownMenuItem(
                       value: r,
@@ -1189,7 +1222,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                     ),
                   )
                   .toList(),
-              onChanged: _isEditing
+              onChanged: isDisabled ? null : _isEditing
                   ? (v) {
                       if (v != null) setState(() => _roleController.text = v);
                     }

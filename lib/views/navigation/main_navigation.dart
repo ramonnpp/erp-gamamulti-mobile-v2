@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../../services/database_service.dart';
 import '../../theme/app_theme.dart';
 import '../home/home_screen.dart';
 import '../attendance/attendance_screen.dart';
@@ -8,6 +9,7 @@ import '../leave/leave_history_screen.dart';
 import '../leave/sick_leave_history_screen.dart';
 import '../activity_log/activity_log_screen.dart';
 import '../profile/profile_screen.dart';
+import '../admin/admin_home_screen.dart';
 
 enum _NavKind { screen, attendanceGroup, leaveGroup }
 
@@ -32,60 +34,71 @@ class _MainNavigationState extends State<MainNavigation>
   late Widget _activeScreen;
   late AnimationController _fadeController;
   late Animation<double> _fadeAnimation;
-
   late AnimationController _popupController;
   late Animation<double> _popupScale;
   late Animation<double> _popupOpacity;
   late Animation<Offset> _popupSlide;
 
-  static const List<Widget> _baseScreens = [
-    HomeScreen(), // 0. Home
-    AttendanceScreen(), // 1. Presensi
-    SickLeaveHistoryScreen(), // 2. Izin / Sakit
-    ActivityLogScreen(), // 3. Log Activity
-    ProfileScreen(), // 4. Profile
-  ];
+  late final List<_NavItem> _items;
+  late final List<Widget> _baseScreens;
 
-  final List<_NavItem> _items = const [
-    _NavItem(
-      icon: Icons.home_outlined,
-      selectedIcon: Icons.home_rounded,
-      label: 'Home',
-      kind: _NavKind.screen,
-      screenIndex: 0,
-    ),
-    _NavItem(
-      icon: Icons.location_on_outlined,
-      selectedIcon: Icons.location_on_rounded,
-      label: 'Presensi',
-      kind: _NavKind.attendanceGroup,
-    ),
-    _NavItem(
-      icon: Icons.assignment_outlined,
-      selectedIcon: Icons.assignment_rounded,
-      label: 'Izin',
-      kind: _NavKind.leaveGroup,
-    ),
-    _NavItem(
-      icon: Icons.timeline_outlined,
-      selectedIcon: Icons.timeline_rounded,
-      label: 'Log Activity',
-      kind: _NavKind.screen,
-      screenIndex: 3,
-    ),
-    _NavItem(
-      icon: Icons.person_outline_rounded,
-      selectedIcon: Icons.person_rounded,
-      label: 'Profile',
-      kind: _NavKind.screen,
-      screenIndex: 4,
-    ),
-  ];
+  bool get _isAdmin {
+    final user = DatabaseService().getCurrentUser();
+    return user?['role']?.toString().toLowerCase() == 'admin';
+  }
+
+  Widget _buildHomeScreen() =>
+      _isAdmin ? const AdminHomeScreen() : const HomeScreen();
 
   @override
   void initState() {
     super.initState();
-    _activeScreen = _baseScreens[0];
+
+    _baseScreens = const [
+      HomeScreen(),
+      AttendanceScreen(),
+      SickLeaveHistoryScreen(),
+      ActivityLogScreen(),
+      ProfileScreen(),
+    ];
+
+    _items = const [
+      _NavItem(
+        icon: Icons.home_outlined,
+        selectedIcon: Icons.home_rounded,
+        label: 'Beranda',
+        kind: _NavKind.screen,
+        screenIndex: 0,
+      ),
+      _NavItem(
+        icon: Icons.location_on_outlined,
+        selectedIcon: Icons.location_on_rounded,
+        label: 'Presensi',
+        kind: _NavKind.attendanceGroup,
+      ),
+      _NavItem(
+        icon: Icons.assignment_outlined,
+        selectedIcon: Icons.assignment_rounded,
+        label: 'Izin',
+        kind: _NavKind.leaveGroup,
+      ),
+      _NavItem(
+        icon: Icons.timeline_outlined,
+        selectedIcon: Icons.timeline_rounded,
+        label: 'Aktivitas',
+        kind: _NavKind.screen,
+        screenIndex: 3,
+      ),
+      _NavItem(
+        icon: Icons.person_outline_rounded,
+        selectedIcon: Icons.person_rounded,
+        label: 'Profil',
+        kind: _NavKind.screen,
+        screenIndex: 4,
+      ),
+    ];
+
+    _activeScreen = _buildHomeScreen();
 
     _fadeController = AnimationController(
       vsync: this,
@@ -142,12 +155,9 @@ class _MainNavigationState extends State<MainNavigation>
         ? _attendanceTabKey
         : _leaveTabKey;
     final centerX = _measureTabCenterX(anchorKey);
-
     setState(() {
       _activePopup = group;
-      if (centerX != null) {
-        _popupAnchorCenterX = centerX;
-      }
+      if (centerX != null) _popupAnchorCenterX = centerX;
     });
     _popupController.forward(from: 0.0);
   }
@@ -165,13 +175,14 @@ class _MainNavigationState extends State<MainNavigation>
     afterClose?.call();
   }
 
+  /// Mengembalikan true jika aplikasi boleh ditutup.
   Future<bool> _onWillPop() async {
     if (_activePopup != _PopupGroup.none) {
       await _closePopup();
       return false;
     }
     if (_currentIndex != 0) {
-      _switchToScreen(widget: const HomeScreen(), navIndex: 0);
+      _switchToScreen(screen: _buildHomeScreen(), navIndex: 0);
       return false;
     }
 
@@ -217,14 +228,14 @@ class _MainNavigationState extends State<MainNavigation>
                   shape: BoxShape.circle,
                   color: AppTheme.errorColor.withValues(alpha: 0.1),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.exit_to_app_rounded,
                   size: 30,
                   color: AppTheme.errorColor,
                 ),
               ),
               const SizedBox(height: 16),
-              const Text(
+              Text(
                 'Keluar Aplikasi',
                 style: TextStyle(
                   fontSize: 20,
@@ -233,10 +244,10 @@ class _MainNavigationState extends State<MainNavigation>
                 ),
               ),
               const SizedBox(height: 4),
-              const Text(
+              Text(
                 'Apakah Anda yakin ingin keluar dari aplikasi?',
-                style: TextStyle(fontSize: 13, color: AppTheme.textSecondary),
                 textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 13, color: AppTheme.textSecondary),
               ),
               const SizedBox(height: 24),
               Row(
@@ -290,10 +301,11 @@ class _MainNavigationState extends State<MainNavigation>
         );
       },
     );
+
     return confirmed ?? false;
   }
 
-  void _switchToScreen({required Widget widget, required int navIndex}) {
+  void _switchToScreen({required Widget screen, required int navIndex}) {
     HapticFeedback.selectionClick();
     final sameTab = navIndex == _currentIndex;
 
@@ -302,22 +314,19 @@ class _MainNavigationState extends State<MainNavigation>
     });
 
     if (sameTab) {
-      setState(() => _activeScreen = widget);
+      setState(() => _activeScreen = screen);
       return;
     }
 
     _fadeController.reverse().then((_) {
       if (!mounted) return;
-      setState(() {
-        _activeScreen = widget;
-      });
+      setState(() => _activeScreen = screen);
       _fadeController.forward();
     });
   }
 
   void _onNavTap(int index) {
     final item = _items[index];
-    HapticFeedback.selectionClick();
 
     if (item.kind == _NavKind.attendanceGroup) {
       if (_activePopup == _PopupGroup.attendance) {
@@ -340,10 +349,10 @@ class _MainNavigationState extends State<MainNavigation>
     _closePopup(
       afterClose: () {
         if (!mounted) return;
-        _switchToScreen(
-          widget: _baseScreens[item.screenIndex!],
-          navIndex: index,
-        );
+        final screen = index == 0
+            ? _buildHomeScreen()
+            : _baseScreens[item.screenIndex!];
+        _switchToScreen(screen: screen, navIndex: index);
       },
     );
   }
@@ -358,7 +367,7 @@ class _MainNavigationState extends State<MainNavigation>
           onTap: () => _closePopup(
             afterClose: () {
               if (!mounted) return;
-              _switchToScreen(widget: const AttendanceScreen(), navIndex: 1);
+              _switchToScreen(screen: const AttendanceScreen(), navIndex: 1);
             },
           ),
         ),
@@ -370,7 +379,7 @@ class _MainNavigationState extends State<MainNavigation>
             afterClose: () {
               if (!mounted) return;
               _switchToScreen(
-                widget: const AttendanceHistoryScreen(),
+                screen: const AttendanceHistoryScreen(),
                 navIndex: 1,
               );
             },
@@ -389,7 +398,7 @@ class _MainNavigationState extends State<MainNavigation>
             afterClose: () {
               if (!mounted) return;
               _switchToScreen(
-                widget: const SickLeaveHistoryScreen(),
+                screen: const SickLeaveHistoryScreen(),
                 navIndex: 2,
               );
             },
@@ -402,7 +411,7 @@ class _MainNavigationState extends State<MainNavigation>
           onTap: () => _closePopup(
             afterClose: () {
               if (!mounted) return;
-              _switchToScreen(widget: const LeaveHistoryScreen(), navIndex: 2);
+              _switchToScreen(screen: const LeaveHistoryScreen(), navIndex: 2);
             },
           ),
         ),
@@ -471,7 +480,7 @@ class _MainNavigationState extends State<MainNavigation>
                         option.label,
                         maxLines: 1,
                         softWrap: false,
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: AppTheme.textPrimary,
                           fontSize: 12.5,
                           fontWeight: FontWeight.w700,
@@ -502,10 +511,11 @@ class _MainNavigationState extends State<MainNavigation>
 
     const double estimatedClusterWidth = 256;
     final double rawLeft = centerX - (estimatedClusterWidth / 2);
-    final double clampedLeft = rawLeft.clamp(
+    final double maxLeft = (screenWidth - estimatedClusterWidth - 16.0).clamp(
       16.0,
-      (screenWidth - estimatedClusterWidth - 16.0).clamp(16.0, double.infinity),
+      double.infinity,
     );
+    final double clampedLeft = rawLeft.clamp(16.0, maxLeft);
 
     return Positioned.fill(
       child: Stack(
@@ -583,7 +593,7 @@ class _MainNavigationState extends State<MainNavigation>
           ),
           child: Container(
             height: 76,
-            padding: const EdgeInsets.symmetric(horizontal: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 16),
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(36),
@@ -603,13 +613,7 @@ class _MainNavigationState extends State<MainNavigation>
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: List.generate(_items.length, (index) {
                 final item = _items[index];
-                final isPopupOpen =
-                    (item.kind == _NavKind.attendanceGroup &&
-                        _activePopup == _PopupGroup.attendance) ||
-                    (item.kind == _NavKind.leaveGroup &&
-                        _activePopup == _PopupGroup.leave);
-                final selected = index == _currentIndex || isPopupOpen;
-
+                final selected = index == _currentIndex;
                 return Expanded(
                   child: GestureDetector(
                     key: _tabKeyForIndex(index),
@@ -630,14 +634,8 @@ class _MainNavigationState extends State<MainNavigation>
                               transitionBuilder: (child, anim) =>
                                   ScaleTransition(scale: anim, child: child),
                               child: Icon(
-                                key: ValueKey<String>(
-                                  '${index}_${isPopupOpen}_$selected',
-                                ),
-                                isPopupOpen
-                                    ? Icons.close_rounded
-                                    : (selected
-                                          ? item.selectedIcon
-                                          : item.icon),
+                                selected ? item.selectedIcon : item.icon,
+                                key: ValueKey<String>('${index}_$selected'),
                                 color: selected
                                     ? AppTheme.primaryColor
                                     : AppTheme.textSecondary,

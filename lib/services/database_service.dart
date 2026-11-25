@@ -42,6 +42,7 @@ class DatabaseService {
   // Konfigurasi koneksi PostgreSQL ERP
   // Sesuaikan host, port, database name, username, dan password dengan server Anda.
   // final String _host = '192.168.18.80';
+  // final String _host = '192.168.50.13';
   final String _host = '192.168.100.43';
   // final String _host = '10.10.10';
   final int _port = 5432;
@@ -911,9 +912,7 @@ class DatabaseService {
     try {
       final conn = await connect();
       await conn.execute(
-        Sql.named(
-          'DELETE FROM activity_logs WHERE id = @logId',
-        ),
+        Sql.named('DELETE FROM activity_logs WHERE id = @logId'),
         parameters: {'logId': logId},
       );
       return true;
