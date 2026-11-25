@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../../theme/app_theme.dart';
 import '../../services/database_service.dart';
+import '../../announcements/announce-detail-screen.dart';
 import '../../widgets/custom_snackbar.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -120,107 +121,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     return DateFormat('HH:mm').format(dt);
   }
 
-  void _showAnnouncementDetail(String title, String content, String? date) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+  void _openAnnouncementDetail(Map<String, dynamic> announcement) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AnnounceDetailScreen(announcement: announcement),
       ),
-      builder: (ctx) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(24, 14, 24, 24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    width: 38,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFCBD5E1),
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 18),
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
-                    color: AppTheme.textPrimary,
-                  ),
-                ),
-                if (date != null && date.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    date,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: AppTheme.textSecondary,
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 14),
-                Text(
-                  content,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    height: 1.55,
-                    color: AppTheme.textSecondary,
-                  ),
-                ),
-                const SizedBox(height: 22),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: () {
-                          Clipboard.setData(
-                            ClipboardData(text: '$title\n\n$content'),
-                          );
-                          Navigator.pop(ctx);
-                          CustomSnackbar.success(
-                            context,
-                            'Teks pengumuman berhasil disalin',
-                          );
-                        },
-                        style: OutlinedButton.styleFrom(
-                          minimumSize: const Size(0, 46),
-                          side: const BorderSide(color: AppTheme.primaryColor),
-                          foregroundColor: AppTheme.primaryColor,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        icon: const Icon(Icons.copy_rounded, size: 17),
-                        label: const Text(
-                          'Salin',
-                          style: TextStyle(fontWeight: FontWeight.w700),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: () => Navigator.pop(ctx),
-                        style: ElevatedButton.styleFrom(
-                          elevation: 0,
-                          minimumSize: const Size(0, 46),
-                        ),
-                        child: const Text('Tutup'),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        );
-      },
     );
   }
 
@@ -1085,14 +991,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       final title =
                           a['title']?.toString() ?? 'Pengumuman Perusahaan';
                       final content = a['content']?.toString() ?? '';
-                      final date =
-                          a['date']?.toString() ?? a['created_at']?.toString();
+                      final category = a['category']?.toString() ?? 'Umum';
+                      final hasAttachment =
+                          (a['attachment_name']?.toString() ?? '').isNotEmpty;
+                      final catColor = category == 'Urgent'
+                          ? const Color(0xFFDC2626)
+                          : const Color(0xFFEA580C);
 
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 8),
                         child: _PressScaleTile(
-                          onTap: () =>
-                              _showAnnouncementDetail(title, content, date),
+                          onTap: () => _openAnnouncementDetail(
+                            Map<String, dynamic>.from(a),
+                          ),
                           child: Container(
                             padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
@@ -1118,15 +1029,46 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                     crossAxisAlignment:
                                         CrossAxisAlignment.start,
                                     children: [
-                                      Text(
-                                        title,
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w700,
-                                          fontSize: 13.5,
-                                          color: AppTheme.textPrimary,
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
+                                      Row(
+                                        children: [
+                                          if (category != 'Umum') ...[
+                                            Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 6,
+                                                    vertical: 2,
+                                                  ),
+                                              decoration: BoxDecoration(
+                                                color: catColor.withValues(
+                                                  alpha: 0.12,
+                                                ),
+                                                borderRadius:
+                                                    BorderRadius.circular(6),
+                                              ),
+                                              child: Text(
+                                                category,
+                                                style: TextStyle(
+                                                  fontSize: 10,
+                                                  fontWeight: FontWeight.w800,
+                                                  color: catColor,
+                                                ),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 6),
+                                          ],
+                                          Expanded(
+                                            child: Text(
+                                              title,
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.w700,
+                                                fontSize: 13.5,
+                                                color: AppTheme.textPrimary,
+                                              ),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                       const SizedBox(height: 3),
                                       Text(
@@ -1141,6 +1083,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                     ],
                                   ),
                                 ),
+                                if (hasAttachment)
+                                  const Padding(
+                                    padding: EdgeInsets.only(right: 4),
+                                    child: Icon(
+                                      Icons.attach_file_rounded,
+                                      size: 16,
+                                      color: AppTheme.textSecondary,
+                                    ),
+                                  ),
                                 const Icon(
                                   Icons.chevron_right_rounded,
                                   size: 18,

@@ -1,5 +1,11 @@
 import 'dart:async';
+import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:open_filex/open_filex.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:intl/intl.dart';
 import '../../theme/app_theme.dart';
 import '../../services/database_service.dart';
@@ -29,6 +35,15 @@ class _AdminAnnouncementScreenState extends State<AdminAnnouncementScreen>
   int _statExpired = 0;
 
   static const _categories = ['Umum', 'Penting', 'Urgent'];
+  static const int _maxAttachmentBytes = 5 * 1024 * 1024; // 5 MB
+  static const _allowedExtensions = [
+    'pdf',
+    'jpg',
+    'jpeg',
+    'png',
+    'doc',
+    'docx',
+  ];
 
   @override
   void initState() {
@@ -174,6 +189,13 @@ class _AdminAnnouncementScreenState extends State<AdminAnnouncementScreen>
     bool loading = false;
     String? formError;
 
+    // ---- Lampiran ----
+    final String? existingName = ann?['attachment_name']?.toString();
+    Uint8List? newBytes;
+    String? newName;
+    String? newMime;
+    bool removeExisting = false;
+
     await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
@@ -239,6 +261,55 @@ class _AdminAnnouncementScreenState extends State<AdminAnnouncementScreen>
               }
             }
 
+            Future<void> pickAttachment(String source) async {
+              try {
+                String? path;
+                if (source == 'file') {
+                  final files = await FilePicker.pickFiles(
+                    type: FileType.custom,
+                    allowedExtensions: _allowedExtensions,
+                  );
+                  if (files.isNotEmpty) path = files.first.path;
+                } else {
+                  final photo = await ImagePicker().pickImage(
+                    source: source == 'camera'
+                        ? ImageSource.camera
+                        : ImageSource.gallery,
+                  );
+                  path = photo?.path;
+                }
+                if (path == null) return; // user batal
+
+                final bytes = await File(path).readAsBytes();
+                if (!dialogCtx.mounted) return;
+                if (bytes.isEmpty) {
+                  setDS(
+                    () => formError = 'File lampiran kosong / gagal dibaca.',
+                  );
+                  return;
+                }
+                if (bytes.length > _maxAttachmentBytes) {
+                  setDS(
+                    () => formError =
+                        'Ukuran lampiran maksimal 5 MB (file ini ${_formatSize(bytes.length)}).',
+                  );
+                  return;
+                }
+                final name = path.split(RegExp(r'[\\/]')).last;
+                setDS(() {
+                  newBytes = bytes;
+                  newName = name;
+                  newMime = _mimeFromName(name);
+                  formError = null;
+                });
+              } catch (e) {
+                debugPrint('Pick attachment failed: $e');
+                if (dialogCtx.mounted) {
+                  setDS(() => formError = 'Gagal memilih lampiran.');
+                }
+              }
+            }
+
             Future<void> submit() async {
               final title = titleCtrl.text.trim();
               final content = contentCtrl.text.trim();
@@ -272,6 +343,10 @@ class _AdminAnnouncementScreenState extends State<AdminAnnouncementScreen>
                   category: category.isNotEmpty ? category : null,
                   publishedAt: selPub,
                   expiredAt: selExp,
+                  attachmentBytes: newBytes,
+                  attachmentName: newName,
+                  attachmentMime: newMime,
+                  removeAttachment: removeExisting && newBytes == null,
                 );
               } else {
                 ok = await AdminDatabaseService().createAnnouncement(
@@ -281,6 +356,9 @@ class _AdminAnnouncementScreenState extends State<AdminAnnouncementScreen>
                   category: category.isNotEmpty ? category : null,
                   publishedAt: selPub,
                   expiredAt: selExp,
+                  attachmentBytes: newBytes,
+                  attachmentName: newName,
+                  attachmentMime: newMime,
                 );
               }
 
@@ -479,7 +557,8 @@ class _AdminAnnouncementScreenState extends State<AdminAnnouncementScreen>
                                     DropdownMenuItem(value: c, child: Text(c)),
                               )
                               .toList(),
-                          onChanged: (v) => categoryCtrl.text = v ?? 'Umum',
+                          onChanged: (v) =>
+                              setDS(() => categoryCtrl.text = v ?? 'Umum'),
                         ),
                       ),
                     ),
@@ -571,6 +650,102 @@ class _AdminAnnouncementScreenState extends State<AdminAnnouncementScreen>
                         ),
                       ),
                     ),
+                    const SizedBox(height: 14),
+
+                    const Text(
+                      'Lampiran (Opsional)',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.textSecondary,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        _attachButton(
+                          Icons.image_outlined,
+                          'Galeri',
+                          () => pickAttachment('gallery'),
+                        ),
+                        const SizedBox(width: 8),
+                        _attachButton(
+                          Icons.camera_alt_outlined,
+                          'Kamera',
+                          () => pickAttachment('camera'),
+                        ),
+                        const SizedBox(width: 8),
+                        _attachButton(
+                          Icons.folder_open_outlined,
+                          'File',
+                          () => pickAttachment('file'),
+                        ),
+                      ],
+                    ),
+                    if (newName != null ||
+                        (existingName != null && !removeExisting)) ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFECFDF5),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFFA7F3D0)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.attach_file_rounded,
+                              color: Color(0xFF059669),
+                              size: 18,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    newName ?? existingName!,
+                                    style: const TextStyle(
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.w700,
+                                      color: AppTheme.textPrimary,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  Text(
+                                    newName != null
+                                        ? 'Lampiran baru • ${_formatSize(newBytes!.length)}'
+                                        : 'Lampiran saat ini',
+                                    style: const TextStyle(
+                                      fontSize: 11,
+                                      color: AppTheme.textSecondary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            GestureDetector(
+                              onTap: () => setDS(() {
+                                if (newName != null) {
+                                  // batalkan file baru (kembali ke lampiran lama jika ada)
+                                  newBytes = null;
+                                  newName = null;
+                                  newMime = null;
+                                } else {
+                                  removeExisting = true;
+                                }
+                              }),
+                              child: const Icon(
+                                Icons.delete_outline_rounded,
+                                size: 18,
+                                color: Colors.redAccent,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 24),
 
                     Row(
@@ -602,11 +777,7 @@ class _AdminAnnouncementScreenState extends State<AdminAnnouncementScreen>
                                       color: Colors.white,
                                     ),
                                   )
-                                : Text(
-                                    isEdit
-                                        ? 'Simpan Perubahan'
-                                        : 'Tambah Pengumuman',
-                                  ),
+                                : Text(isEdit ? 'Simpan' : 'Tambah'),
                           ),
                         ),
                       ],
@@ -619,6 +790,131 @@ class _AdminAnnouncementScreenState extends State<AdminAnnouncementScreen>
         );
       },
     );
+  }
+
+  // ========== LAMPIRAN HELPERS ==========
+  Widget _attachButton(IconData icon, String label, VoidCallback onTap) {
+    return Expanded(
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF8FAFC),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+          ),
+          child: Column(
+            children: [
+              Icon(icon, size: 20, color: AppTheme.primaryColor),
+              const SizedBox(height: 4),
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: AppTheme.textSecondary,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _formatSize(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+  }
+
+  String _mimeFromName(String? name) {
+    final ext = name?.split('.').last.toLowerCase() ?? '';
+    switch (ext) {
+      case 'pdf':
+        return 'application/pdf';
+      case 'jpg':
+      case 'jpeg':
+        return 'image/jpeg';
+      case 'png':
+        return 'image/png';
+      case 'gif':
+        return 'image/gif';
+      case 'webp':
+        return 'image/webp';
+      case 'doc':
+        return 'application/msword';
+      case 'docx':
+        return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      default:
+        return 'application/octet-stream';
+    }
+  }
+
+  Uint8List? _toBytes(dynamic raw) {
+    if (raw == null) return null;
+    if (raw is Uint8List) return raw;
+    if (raw is List<int>) return Uint8List.fromList(raw);
+    if (raw is List) return Uint8List.fromList(List<int>.from(raw));
+    return null;
+  }
+
+  /// Ambil isi lampiran dari DB saat dibutuhkan (list tidak membawa bytes).
+  Future<void> _openAttachment(Map<String, dynamic> ann) async {
+    try {
+      final data = await AdminDatabaseService().getAnnouncementAttachment(
+        ann['id'],
+      );
+      if (!mounted) return;
+      final bytes = _toBytes(data?['bytes']);
+      if (data == null || bytes == null || bytes.isEmpty) {
+        CustomSnackbar.error(context, 'Lampiran tidak ditemukan');
+        return;
+      }
+      final name = (data['name'] ?? ann['attachment_name'] ?? 'lampiran')
+          .toString();
+      final mime = (data['mime'] ?? _mimeFromName(name)).toString();
+
+      if (mime.startsWith('image/')) {
+        await showDialog(
+          context: context,
+          builder: (ctx) => Dialog(
+            backgroundColor: Colors.black,
+            insetPadding: const EdgeInsets.all(12),
+            child: Stack(
+              children: [
+                InteractiveViewer(child: Image.memory(bytes)),
+                Positioned(
+                  top: 4,
+                  right: 4,
+                  child: IconButton(
+                    icon: const Icon(Icons.close_rounded, color: Colors.white),
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      } else {
+        final dir = await getTemporaryDirectory();
+        final file = File('${dir.path}${Platform.pathSeparator}$name');
+        await file.writeAsBytes(bytes, flush: true);
+        final result = await OpenFilex.open(file.path);
+        if (!mounted) return;
+        if (result.type != ResultType.done) {
+          CustomSnackbar.error(
+            context,
+            'Tidak ada aplikasi untuk membuka file ini',
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('Open attachment failed: $e');
+      if (mounted) CustomSnackbar.error(context, 'Gagal membuka lampiran');
+    }
   }
 
   // ========== DELETE CONFIRM ==========
@@ -729,6 +1025,7 @@ class _AdminAnnouncementScreenState extends State<AdminAnnouncementScreen>
     final pubDate = _formatDateStr(ann['published_at']);
     final expDate = _formatDateStr(ann['expired_at']);
     final createdDate = _formatDateStr(ann['created_at']);
+    final attachName = ann['attachment_name']?.toString();
     final preview = content.length > 60
         ? '${content.substring(0, 60)}...'
         : content;
@@ -850,6 +1147,45 @@ class _AdminAnnouncementScreenState extends State<AdminAnnouncementScreen>
                 _dateChip(Icons.access_time, 'Dibuat', createdDate),
               ],
             ),
+            if (attachName != null && attachName.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              InkWell(
+                onTap: () => _openAttachment(ann),
+                borderRadius: BorderRadius.circular(10),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppTheme.primaryColor.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.attach_file_rounded,
+                        size: 15,
+                        color: AppTheme.primaryColor,
+                      ),
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          attachName,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: AppTheme.primaryColor,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
             const SizedBox(height: 14),
             Row(
               mainAxisAlignment: MainAxisAlignment.end,

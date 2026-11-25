@@ -673,22 +673,30 @@ class DatabaseService {
     }
   }
 
-  // Ambil pengumuman aktif berdasarkan rentang waktu published_at dan expired_at
+  // Kondisi "pengumuman sedang aktif". Jam di database disimpan apa adanya (WIB),
+  // jadi dibandingkan dengan jam WIB juga (bukan CURRENT_TIMESTAMP / UTC).
+  // is_active NULL dianggap aktif (pengumuman baru dari admin tidak mengisi kolom ini).
+  static const String _activeAnnouncementWhere = '''
+    COALESCE(is_active, TRUE) = TRUE
+    AND (published_at IS NULL OR published_at <= (NOW() AT TIME ZONE 'Asia/Jakarta'))
+    AND (expired_at IS NULL OR expired_at > (NOW() AT TIME ZONE 'Asia/Jakarta'))
+  ''';
+
+  // Ambil pengumuman aktif berdasarkan rentang waktu published_at dan expired_at.
+  // Isi lampiran (bytes) TIDAK ikut diambil; gunakan getAnnouncementAttachment.
   Future<List<Map<String, dynamic>>> getActiveAnnouncements() async {
     try {
       final conn = await connect();
       final result = await conn.execute(
         Sql.named('''
-          SELECT id, title, content, category, published_at, expired_at, created_at
+          SELECT id, title, content, category, published_at, expired_at, created_at,
+                 attachment_name, attachment_mime
           FROM announcements
-          WHERE is_active = TRUE
-            AND (
-              (published_at IS NULL AND expired_at IS NULL)
-              OR (published_at IS NOT NULL AND expired_at IS NOT NULL AND CURRENT_TIMESTAMP BETWEEN published_at AND expired_at)
-              OR (published_at IS NOT NULL AND expired_at IS NULL AND CURRENT_TIMESTAMP >= published_at)
-              OR (published_at IS NULL AND expired_at IS NOT NULL AND CURRENT_TIMESTAMP <= expired_at)
-            )
-          ORDER BY created_at DESC
+          WHERE $_activeAnnouncementWhere
+          ORDER BY
+            CASE category WHEN 'Urgent' THEN 0 WHEN 'Penting' THEN 1 ELSE 2 END,
+            COALESCE(published_at, created_at) DESC,
+            id DESC
           LIMIT 10
         '''),
       );
@@ -701,13 +709,41 @@ class DatabaseService {
           'category': row[3]?.toString(),
           'published_at': row[4]?.toString(),
           'expired_at': row[5]?.toString(),
-          'created_at': row[6] != null ? _formatDate(row[6]) : null,
+          'created_at': row[6]?.toString(),
+          'attachment_name': row[7],
+          'attachment_mime': row[8],
         });
       }
       return list;
     } catch (e) {
       debugPrint('Error ambil pengumuman aktif: $e');
       return getAnnouncements(); // fallback ke query dasar
+    }
+  }
+
+  // Ambil isi lampiran satu pengumuman aktif (dipanggil saat detail dibuka).
+  // Mengembalikan {'name', 'mime', 'bytes'} atau null.
+  Future<Map<String, dynamic>?> getAnnouncementAttachment(
+    int announcementId,
+  ) async {
+    try {
+      final conn = await connect();
+      final result = await conn.execute(
+        Sql.named('''
+          SELECT attachment_name, attachment_mime, attachment_data
+          FROM announcements
+          WHERE id = @id
+            AND attachment_data IS NOT NULL
+            AND $_activeAnnouncementWhere
+        '''),
+        parameters: {'id': announcementId},
+      );
+      if (result.isEmpty) return null;
+      final row = result.first;
+      return {'name': row[0], 'mime': row[1], 'bytes': row[2]};
+    } catch (e) {
+      debugPrint('Error ambil lampiran pengumuman: $e');
+      return null;
     }
   }
 

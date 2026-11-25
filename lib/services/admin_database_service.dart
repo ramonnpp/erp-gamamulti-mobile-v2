@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:postgres/postgres.dart';
 import 'database_service.dart';
@@ -6,6 +8,9 @@ import 'database_service.dart';
 /// Service khusus Admin — semua metode memanggil [_ensureAdmin] di baris pertama.
 /// Menggunakan koneksi dan sesi [_currentUser] yang sama dari [DatabaseService].
 class AdminDatabaseService {
+  /// Batas ukuran lampiran pengumuman (harus sama dengan CHECK di database).
+  static const int maxAttachmentBytes = 5 * 1024 * 1024;
+
   // ---------- Guard ----------
 
   void _ensureAdmin() {
@@ -32,14 +37,16 @@ class AdminDatabaseService {
       await conn.execute(
         Sql.named('''
           INSERT INTO admin_audit_logs (admin_id, action, target_table, target_id, details)
-          VALUES (@adminId, @action, @targetTable, @targetId, @details)
+          VALUES (@adminId, @action, @targetTable, @targetId, CAST(CAST(@details AS TEXT) AS JSONB))
         '''),
         parameters: {
           'adminId': adminId,
           'action': action,
           'targetTable': targetTable,
           'targetId': targetId,
-          'details': details?.toString(),
+          'details': details == null
+              ? null
+              : jsonEncode(details, toEncodable: (o) => o.toString()),
         },
       );
     } catch (e) {
@@ -403,7 +410,8 @@ class AdminDatabaseService {
       final conn = await DatabaseService().connect();
       final result = await conn.execute(
         Sql.named('''
-          SELECT id, title, content, category, published_at, expired_at, created_by, created_at
+          SELECT id, title, content, category, published_at, expired_at, created_by, created_at,
+                 attachment_name, attachment_mime
           FROM announcements
           ORDER BY created_at DESC
         '''),
@@ -419,6 +427,8 @@ class AdminDatabaseService {
               'expired_at': row[5]?.toString(),
               'created_by': row[6],
               'created_at': row[7]?.toString() ?? '',
+              'attachment_name': row[8],
+              'attachment_mime': row[9],
             },
           )
           .toList();
@@ -435,7 +445,8 @@ class AdminDatabaseService {
       final conn = await DatabaseService().connect();
       final result = await conn.execute(
         Sql.named('''
-          SELECT id, title, content, category, published_at, expired_at, created_by, created_at
+          SELECT id, title, content, category, published_at, expired_at, created_by, created_at,
+                 attachment_name, attachment_mime
           FROM announcements
           WHERE (published_at IS NULL OR published_at <= (NOW() AT TIME ZONE 'Asia/Jakarta'))
             AND (expired_at IS NULL OR expired_at > (NOW() AT TIME ZONE 'Asia/Jakarta'))
@@ -453,6 +464,8 @@ class AdminDatabaseService {
               'expired_at': row[5]?.toString(),
               'created_by': row[6],
               'created_at': row[7]?.toString() ?? '',
+              'attachment_name': row[8],
+              'attachment_mime': row[9],
             },
           )
           .toList();
@@ -470,7 +483,7 @@ class AdminDatabaseService {
         '${two(d.hour)}:${two(d.minute)}:${two(d.second)}';
   }
 
-  /// Buat pengumuman baru.
+  /// Buat pengumuman baru (lampiran opsional) + catat audit log.
   Future<bool> createAnnouncement({
     required int createdBy,
     required String title,
@@ -478,16 +491,31 @@ class AdminDatabaseService {
     String? category,
     DateTime? publishedAt,
     DateTime? expiredAt,
+    Uint8List? attachmentBytes,
+    String? attachmentName,
+    String? attachmentMime,
   }) async {
     _ensureAdmin();
     try {
+      final bytes = (attachmentBytes != null && attachmentBytes.isNotEmpty)
+          ? attachmentBytes
+          : null;
+      if (bytes != null && bytes.length > maxAttachmentBytes) {
+        debugPrint('Lampiran melebihi batas ${maxAttachmentBytes ~/ 1024} KB');
+        return false;
+      }
+
       final conn = await DatabaseService().connect();
-      await conn.execute(
+      final result = await conn.execute(
         Sql.named('''
           INSERT INTO announcements
-            (title, content, category, published_at, expired_at, created_by, created_at)
+            (title, content, category, published_at, expired_at, created_by, created_at,
+             attachment_name, attachment_mime, attachment_data)
           VALUES
-            (@title, @content, @category, CAST(@publishedAt AS timestamp), CAST(@expiredAt AS timestamp), @createdBy, CURRENT_TIMESTAMP)
+            (@title, @content, @category, CAST(@publishedAt AS timestamp), CAST(@expiredAt AS timestamp),
+             @createdBy, CURRENT_TIMESTAMP,
+             @attName, @attMime, @attData)
+          RETURNING id
         '''),
         parameters: {
           'title': title,
@@ -496,6 +524,23 @@ class AdminDatabaseService {
           'publishedAt': _wallClock(publishedAt),
           'expiredAt': _wallClock(expiredAt),
           'createdBy': createdBy,
+          'attName': bytes != null ? attachmentName : null,
+          'attMime': bytes != null ? attachmentMime : null,
+          'attData': bytes != null ? TypedValue(Type.byteArray, bytes) : null,
+        },
+      );
+
+      final newId = result.first[0] as int;
+      await _logAudit(
+        createdBy,
+        'CREATE_ANNOUNCEMENT',
+        'announcements',
+        newId,
+        {
+          'title': title,
+          'category': category,
+          if (bytes != null) 'attachment_name': attachmentName,
+          if (bytes != null) 'attachment_size': bytes.length,
         },
       );
       return true;
@@ -505,7 +550,10 @@ class AdminDatabaseService {
     }
   }
 
-  /// Update pengumuman.
+  /// Update pengumuman + catat audit log.
+  ///
+  /// Lampiran: [attachmentBytes] diisi = ganti lampiran,
+  /// [removeAttachment] = true = hapus lampiran, selain itu lampiran tidak berubah.
   Future<bool> updateAnnouncement({
     required int announcementId,
     required int updatedBy,
@@ -514,9 +562,49 @@ class AdminDatabaseService {
     String? category,
     DateTime? publishedAt,
     DateTime? expiredAt,
+    Uint8List? attachmentBytes,
+    String? attachmentName,
+    String? attachmentMime,
+    bool removeAttachment = false,
   }) async {
     _ensureAdmin();
     try {
+      final bytes = (attachmentBytes != null && attachmentBytes.isNotEmpty)
+          ? attachmentBytes
+          : null;
+      if (bytes != null && bytes.length > maxAttachmentBytes) {
+        debugPrint('Lampiran melebihi batas ${maxAttachmentBytes ~/ 1024} KB');
+        return false;
+      }
+
+      final params = <String, dynamic>{
+        'id': announcementId,
+        'title': title,
+        'content': content,
+        'category': category,
+        'publishedAt': _wallClock(publishedAt),
+        'expiredAt': _wallClock(expiredAt),
+      };
+
+      String attachmentSql = '';
+      String attachmentAction = 'unchanged';
+      if (bytes != null) {
+        attachmentSql = ''',
+              attachment_name = @attName,
+              attachment_mime = @attMime,
+              attachment_data = @attData''';
+        params['attName'] = attachmentName;
+        params['attMime'] = attachmentMime;
+        params['attData'] = TypedValue(Type.byteArray, bytes);
+        attachmentAction = 'replaced';
+      } else if (removeAttachment) {
+        attachmentSql = ''',
+              attachment_name = NULL,
+              attachment_mime = NULL,
+              attachment_data = NULL''';
+        attachmentAction = 'removed';
+      }
+
       final conn = await DatabaseService().connect();
       await conn.execute(
         Sql.named('''
@@ -526,16 +614,23 @@ class AdminDatabaseService {
               category      = COALESCE(@category, category),
               published_at  = COALESCE(CAST(@publishedAt AS timestamp), published_at),
               expired_at    = COALESCE(CAST(@expiredAt AS timestamp), expired_at),
-              updated_at    = CURRENT_TIMESTAMP
+              updated_at    = CURRENT_TIMESTAMP$attachmentSql
           WHERE id = @id
         '''),
-        parameters: {
-          'id': announcementId,
+        parameters: params,
+      );
+
+      await _logAudit(
+        updatedBy,
+        'UPDATE_ANNOUNCEMENT',
+        'announcements',
+        announcementId,
+        {
           'title': title,
-          'content': content,
           'category': category,
-          'publishedAt': _wallClock(publishedAt),
-          'expiredAt': _wallClock(expiredAt),
+          'attachment': attachmentAction,
+          if (bytes != null) 'attachment_name': attachmentName,
+          if (bytes != null) 'attachment_size': bytes.length,
         },
       );
       return true;
@@ -545,7 +640,41 @@ class AdminDatabaseService {
     }
   }
 
-  /// Hapus pengumuman.
+  /// Ambil isi lampiran satu pengumuman (dipanggil hanya saat lampiran dibuka).
+  /// Admin: semua pengumuman. User biasa: hanya pengumuman yang sedang aktif.
+  /// Mengembalikan {'name', 'mime', 'bytes'} atau null.
+  Future<Map<String, dynamic>?> getAnnouncementAttachment(
+    int announcementId,
+  ) async {
+    final user = DatabaseService().getCurrentUser();
+    if (user == null) {
+      throw Exception('Akses ditolak: silakan login terlebih dahulu.');
+    }
+    final isAdmin = user['role']?.toString().toLowerCase() == 'admin';
+    try {
+      final conn = await DatabaseService().connect();
+      final activeOnly = isAdmin
+          ? ''
+          : "AND (published_at IS NULL OR published_at <= (NOW() AT TIME ZONE 'Asia/Jakarta')) "
+                "AND (expired_at IS NULL OR expired_at > (NOW() AT TIME ZONE 'Asia/Jakarta'))";
+      final result = await conn.execute(
+        Sql.named('''
+          SELECT attachment_name, attachment_mime, attachment_data
+          FROM announcements
+          WHERE id = @id AND attachment_data IS NOT NULL $activeOnly
+        '''),
+        parameters: {'id': announcementId},
+      );
+      if (result.isEmpty) return null;
+      final row = result.first;
+      return {'name': row[0], 'mime': row[1], 'bytes': row[2]};
+    } catch (e) {
+      debugPrint('Error ambil lampiran announcement: $e');
+      return null;
+    }
+  }
+
+  /// Hapus pengumuman (beserta lampirannya) + catat audit log.
   Future<bool> deleteAnnouncement({
     required int announcementId,
     required int deletedByUserId,
@@ -554,11 +683,16 @@ class AdminDatabaseService {
     try {
       final conn = await DatabaseService().connect();
       final beforeResult = await conn.execute(
-        Sql.named('SELECT title FROM announcements WHERE id = @id'),
+        Sql.named(
+          'SELECT title, attachment_name FROM announcements WHERE id = @id',
+        ),
         parameters: {'id': announcementId},
       );
       final beforeTitle = beforeResult.isNotEmpty
           ? beforeResult.first[0]
+          : null;
+      final beforeAttachment = beforeResult.isNotEmpty
+          ? beforeResult.first[1]
           : null;
 
       await conn.execute(
@@ -570,7 +704,7 @@ class AdminDatabaseService {
         'DELETE_ANNOUNCEMENT',
         'announcements',
         announcementId,
-        {'title': beforeTitle},
+        {'title': beforeTitle, 'attachment_name': beforeAttachment},
       );
       return true;
     } catch (e) {
