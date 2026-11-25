@@ -18,7 +18,7 @@ class _LeaveHistoryScreenState extends State<LeaveHistoryScreen>
     with SingleTickerProviderStateMixin {
   List<Map<String, dynamic>> _leaveData = [];
   List<Map<String, dynamic>> _filteredLeaveData = [];
-  
+
   bool _isFilterExpanded = false;
   String _filterType = 'Semua';
   String _filterStatus = 'Semua';
@@ -216,34 +216,40 @@ class _LeaveHistoryScreenState extends State<LeaveHistoryScreen>
                   : SliverPadding(
                       padding: const EdgeInsets.fromLTRB(16, 4, 16, 130),
                       sliver: SliverList(
-                        delegate: SliverChildBuilderDelegate(
-                          (context, index) {
-                            return AnimatedBuilder(
-                              animation: _animController,
-                              builder: (context, child) {
-                                final slideVal = Tween<Offset>(
-                                  begin: const Offset(0, 0.1),
-                                  end: Offset.zero,
-                                ).animate(
-                                  CurvedAnimation(
-                                    parent: _animController,
-                                    curve: Interval(
-                                      (index / (_filteredLeaveData.isEmpty ? 1 : _filteredLeaveData.length)).clamp(0.0, 1.0),
-                                      1.0,
-                                      curve: Curves.easeOutCubic,
+                        delegate: SliverChildBuilderDelegate((context, index) {
+                          return AnimatedBuilder(
+                            animation: _animController,
+                            builder: (context, child) {
+                              final slideVal =
+                                  Tween<Offset>(
+                                    begin: const Offset(0, 0.1),
+                                    end: Offset.zero,
+                                  ).animate(
+                                    CurvedAnimation(
+                                      parent: _animController,
+                                      curve: Interval(
+                                        (index /
+                                                (_filteredLeaveData.isEmpty
+                                                    ? 1
+                                                    : _filteredLeaveData
+                                                          .length))
+                                            .clamp(0.0, 1.0),
+                                        1.0,
+                                        curve: Curves.easeOutCubic,
+                                      ),
                                     ),
-                                  ),
-                                );
-                                return FadeTransition(
-                                  opacity: _fadeAnimation,
-                                  child: SlideTransition(position: slideVal, child: child),
-                                );
-                              },
-                              child: _buildLeaveCard(_filteredLeaveData[index]),
-                            );
-                          },
-                          childCount: _filteredLeaveData.length,
-                        ),
+                                  );
+                              return FadeTransition(
+                                opacity: _fadeAnimation,
+                                child: SlideTransition(
+                                  position: slideVal,
+                                  child: child,
+                                ),
+                              );
+                            },
+                            child: _buildLeaveCard(_filteredLeaveData[index]),
+                          );
+                        }, childCount: _filteredLeaveData.length),
                       ),
                     ),
             ],
@@ -266,7 +272,11 @@ class _LeaveHistoryScreenState extends State<LeaveHistoryScreen>
           icon: const Icon(Icons.add_rounded, color: Colors.white, size: 22),
           label: const Text(
             'Ajukan Cuti',
-            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 14),
+            style: TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w700,
+              fontSize: 14,
+            ),
           ),
         ),
       ),
@@ -291,7 +301,11 @@ class _LeaveHistoryScreenState extends State<LeaveHistoryScreen>
                 color: Colors.white.withValues(alpha: 0.2),
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: const Icon(Icons.calendar_month_rounded, color: Colors.white, size: 18),
+              child: const Icon(
+                Icons.calendar_month_rounded,
+                color: Colors.white,
+                size: 18,
+              ),
             ),
             const SizedBox(width: 10),
             const Expanded(
@@ -328,7 +342,11 @@ class _LeaveHistoryScreenState extends State<LeaveHistoryScreen>
             Container(
               decoration: const BoxDecoration(
                 gradient: LinearGradient(
-                  colors: [Color(0xFF022C1A), Color(0xFF064E3B), Color(0xFF059669)],
+                  colors: [
+                    Color(0xFF022C1A),
+                    Color(0xFF064E3B),
+                    Color(0xFF059669),
+                  ],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
@@ -357,13 +375,15 @@ class _LeaveHistoryScreenState extends State<LeaveHistoryScreen>
               onCsv: (ctx) => ExportService.exportLeaveCsv(
                 ctx,
                 _filteredLeaveData,
-                DatabaseService().getCurrentUser()?['name']?.toString() ?? 'Karyawan',
+                DatabaseService().getCurrentUser()?['name']?.toString() ??
+                    'Karyawan',
                 _statusOf,
               ),
               onPdf: (ctx) => ExportService.exportLeavePdf(
                 ctx,
                 _filteredLeaveData,
-                DatabaseService().getCurrentUser()?['name']?.toString() ?? 'Karyawan',
+                DatabaseService().getCurrentUser()?['name']?.toString() ??
+                    'Karyawan',
                 _statusOf,
               ),
             ),
@@ -472,10 +492,7 @@ class _LeaveHistoryScreenState extends State<LeaveHistoryScreen>
             subtitle,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontSize: 10,
-              color: AppTheme.textSecondary,
-            ),
+            style: const TextStyle(fontSize: 10, color: AppTheme.textSecondary),
           ),
         ],
       ),
@@ -553,10 +570,14 @@ class _LeaveHistoryScreenState extends State<LeaveHistoryScreen>
             color: Colors.transparent,
             borderRadius: BorderRadius.circular(18),
             child: InkWell(
-              onTap: () => setState(() => _isFilterExpanded = !_isFilterExpanded),
+              onTap: () =>
+                  setState(() => _isFilterExpanded = !_isFilterExpanded),
               borderRadius: BorderRadius.circular(18),
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 12,
+                ),
                 child: Row(
                   children: [
                     Container(
@@ -570,7 +591,9 @@ class _LeaveHistoryScreenState extends State<LeaveHistoryScreen>
                       child: Icon(
                         Icons.tune_rounded,
                         size: 16,
-                        color: activeCount > 0 ? Colors.white : AppTheme.primaryColor,
+                        color: activeCount > 0
+                            ? Colors.white
+                            : AppTheme.primaryColor,
                       ),
                     ),
                     const SizedBox(width: 10),
@@ -686,7 +709,9 @@ class _LeaveHistoryScreenState extends State<LeaveHistoryScreen>
                   label: 'Bulan',
                   icon: Icons.calendar_month_rounded,
                   value: _filterMonth,
-                  items: _months.map((m) => (m['label']!, m['value']!)).toList(),
+                  items: _months
+                      .map((m) => (m['label']!, m['value']!))
+                      .toList(),
                   onChanged: (v) => setState(() {
                     _filterMonth = v;
                     _applyFilter();
@@ -731,7 +756,9 @@ class _LeaveHistoryScreenState extends State<LeaveHistoryScreen>
                 physics: const BouncingScrollPhysics(),
                 child: Row(
                   children: [
-                    _buildChip('Semua', _filterType, Icons.dashboard_rounded, (v) {
+                    _buildChip('Semua', _filterType, Icons.dashboard_rounded, (
+                      v,
+                    ) {
                       setState(() {
                         _filterType = v;
                         _applyFilter();
@@ -799,12 +826,17 @@ class _LeaveHistoryScreenState extends State<LeaveHistoryScreen>
                 physics: const BouncingScrollPhysics(),
                 child: Row(
                   children: [
-                    _buildChip('Semua', _filterStatus, Icons.dashboard_rounded, (v) {
-                      setState(() {
-                        _filterStatus = v;
-                        _applyFilter();
-                      });
-                    }),
+                    _buildChip(
+                      'Semua',
+                      _filterStatus,
+                      Icons.dashboard_rounded,
+                      (v) {
+                        setState(() {
+                          _filterStatus = v;
+                          _applyFilter();
+                        });
+                      },
+                    ),
                     const SizedBox(width: 8),
                     _buildChip(
                       'Sedang Berlangsung',
@@ -974,11 +1006,13 @@ class _LeaveHistoryScreenState extends State<LeaveHistoryScreen>
   }
 
   Widget _buildEmptyState() {
-    return Center(
+    return Align(
+      alignment: Alignment.topCenter,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 48),
+        padding: const EdgeInsets.fromLTRB(32, 32, 32, 0),
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.start,
           children: [
             Container(
               padding: const EdgeInsets.all(22),
@@ -1033,7 +1067,10 @@ class _LeaveHistoryScreenState extends State<LeaveHistoryScreen>
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 10,
+                ),
               ),
               icon: const Icon(Icons.refresh_rounded, size: 16),
               label: const Text(
@@ -1072,10 +1109,7 @@ class _LeaveHistoryScreenState extends State<LeaveHistoryScreen>
         color: Colors.transparent,
         borderRadius: BorderRadius.circular(20),
         child: InkWell(
-          onTap: () => Navigator.push(
-            context,
-            LeaveDetailScreen.route(leave),
-          ),
+          onTap: () => Navigator.push(context, LeaveDetailScreen.route(leave)),
           borderRadius: BorderRadius.circular(20),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1227,10 +1261,15 @@ class _LeaveHistoryScreenState extends State<LeaveHistoryScreen>
               const SizedBox(height: 10),
               // Footer metadata
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
                 decoration: const BoxDecoration(
                   color: Color(0xFFFAFBFC),
-                  borderRadius: BorderRadius.vertical(bottom: Radius.circular(20)),
+                  borderRadius: BorderRadius.vertical(
+                    bottom: Radius.circular(20),
+                  ),
                   border: Border(top: BorderSide(color: Color(0xFFF1F5F9))),
                 ),
                 child: Row(

@@ -51,3 +51,4 @@ CLAUDE.md
 backup_erp.sql
 DATABASE_SCHEMA.sql
 temp_analysis.txt
+*.md

@@ -69,10 +69,7 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen>
 
   Future<void> _loadInitialData() async {
     setState(() => _isLoading = true);
-    await Future.wait([
-      _loadEmployeesAndShifts(),
-      _loadAttendance(),
-    ]);
+    await Future.wait([_loadEmployeesAndShifts(), _loadAttendance()]);
     if (mounted) {
       setState(() => _isLoading = false);
     }
@@ -104,7 +101,8 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen>
       for (final r in rawList) {
         final dateStr = r['date']?.toString() ?? '';
         final dateOnly = dateStr.split(' ')[0].replaceAll('T', '').trim();
-        final userId = r['user_id']?.toString() ?? r['user_name']?.toString() ?? '';
+        final userId =
+            r['user_id']?.toString() ?? r['user_name']?.toString() ?? '';
         final groupKey = '${userId}_$dateOnly';
 
         if (dateOnly.contains('-')) {
@@ -150,7 +148,10 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen>
           map['day'] = DateFormat('EEEE', 'id_ID').format(dt);
           map['date'] = DateFormat('dd MMMM yyyy', 'id_ID').format(dt);
           map['dayNum'] = DateFormat('dd', 'id_ID').format(dt);
-          map['shortMonth'] = DateFormat('MMM', 'id_ID').format(dt).toUpperCase();
+          map['shortMonth'] = DateFormat(
+            'MMM',
+            'id_ID',
+          ).format(dt).toUpperCase();
           map['duration'] = _calculateDuration(
             map['checkIn'].toString(),
             map['checkOut'].toString(),
@@ -166,7 +167,9 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen>
         }
       });
 
-      processed.sort((a, b) => b['rawDate'].toString().compareTo(a['rawDate'].toString()));
+      processed.sort(
+        (a, b) => b['rawDate'].toString().compareTo(a['rawDate'].toString()),
+      );
 
       final sortedYears = detectedYears.toList()..sort();
 
@@ -396,7 +399,9 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen>
                         fillColor: const Color(0xFFF8FAFC),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                          borderSide: const BorderSide(
+                            color: Color(0xFFE2E8F0),
+                          ),
                         ),
                         prefixIcon: const Icon(Icons.login_rounded, size: 18),
                       ),
@@ -422,7 +427,9 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen>
                         fillColor: const Color(0xFFF8FAFC),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                          borderSide: const BorderSide(
+                            color: Color(0xFFE2E8F0),
+                          ),
                         ),
                         prefixIcon: const Icon(Icons.logout_rounded, size: 18),
                       ),
@@ -647,17 +654,29 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen>
     }).toList();
 
     if (isPdf) {
-      await AdminExportService().exportAllAttendancePdf(ctx, exportRows, adminName);
+      await AdminExportService().exportAllAttendancePdf(
+        ctx,
+        exportRows,
+        adminName,
+      );
     } else {
-      await AdminExportService().exportAllAttendanceCsv(ctx, exportRows, adminName);
+      await AdminExportService().exportAllAttendanceCsv(
+        ctx,
+        exportRows,
+        adminName,
+      );
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final total = _filteredList.length;
-    final tepatWaktu = _filteredList.where((d) => d['status'] == 'Tepat Waktu').length;
-    final terlambat = _filteredList.where((d) => d['status'] == 'Terlambat').length;
+    final tepatWaktu = _filteredList
+        .where((d) => d['status'] == 'Tepat Waktu')
+        .length;
+    final terlambat = _filteredList
+        .where((d) => d['status'] == 'Terlambat')
+        .length;
     final libur = _filteredList.where((d) => d['status'] == 'Libur').length;
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
@@ -668,16 +687,21 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen>
           headerSliverBuilder: (context, innerBoxIsScrolled) {
             return [
               SliverAppBar(
-                expandedHeight: 180,
+                expandedHeight: 170,
                 floating: false,
                 pinned: true,
                 backgroundColor: AppTheme.primaryColor,
                 shape: const RoundedRectangleBorder(
-                  borderRadius: BorderRadius.vertical(bottom: Radius.circular(28)),
+                  borderRadius: BorderRadius.vertical(
+                    bottom: Radius.circular(28),
+                  ),
                 ),
                 leading: Navigator.canPop(context)
                     ? IconButton(
-                        icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white),
+                        icon: const Icon(
+                          Icons.arrow_back_ios_new_rounded,
+                          color: Colors.white,
+                        ),
                         onPressed: () => Navigator.pop(context),
                       )
                     : null,
@@ -705,20 +729,15 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen>
                   background: Padding(
                     padding: EdgeInsets.fromLTRB(
                       18,
-                      MediaQuery.of(context).padding.top + 60,
+                      MediaQuery.of(context).padding.top + 50,
                       18,
                       16,
                     ),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        _statsGaugeBar(
-                          total: total,
-                          tepatWaktu: tepatWaktu,
-                          terlambat: terlambat,
-                          libur: libur,
-                        ),
-                      ],
+                    child: _statsGaugeBar(
+                      total: total,
+                      tepatWaktu: tepatWaktu,
+                      terlambat: terlambat,
+                      libur: libur,
                     ),
                   ),
                 ),
@@ -826,7 +845,9 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen>
                 else if (_filteredList.isEmpty)
                   _buildEmptyState()
                 else
-                  ..._filteredList.map((record) => _buildAttendanceCard(record)),
+                  ..._filteredList.map(
+                    (record) => _buildAttendanceCard(record),
+                  ),
               ],
             ),
           ),
@@ -843,6 +864,7 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen>
   }) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      alignment: Alignment.center,
       decoration: BoxDecoration(
         color: Colors.black.withValues(alpha: 0.22),
         borderRadius: BorderRadius.circular(16),
@@ -867,7 +889,7 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen>
         Text(
           count,
           style: TextStyle(
-            fontSize: 17,
+            fontSize: 22,
             fontWeight: FontWeight.w800,
             color: color,
           ),
@@ -875,7 +897,7 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen>
         Text(
           label,
           style: TextStyle(
-            fontSize: 10.5,
+            fontSize: 11.5,
             fontWeight: FontWeight.w600,
             color: Colors.white.withValues(alpha: 0.8),
           ),
@@ -921,7 +943,10 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen>
                 value: _filterEmployeeId,
                 isExpanded: true,
                 items: [
-                  const DropdownMenuItem(value: 'Semua', child: Text('Semua Karyawan')),
+                  const DropdownMenuItem(
+                    value: 'Semua',
+                    child: Text('Semua Karyawan'),
+                  ),
                   ..._employees.map((e) {
                     return DropdownMenuItem<String>(
                       value: e['id'].toString(),
@@ -953,7 +978,10 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen>
                   children: [
                     const Text(
                       'Bulan',
-                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                     const SizedBox(height: 6),
                     Container(
@@ -968,7 +996,10 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen>
                           value: _filterMonth,
                           isExpanded: true,
                           items: [
-                            const DropdownMenuItem(value: 'Semua', child: Text('Semua')),
+                            const DropdownMenuItem(
+                              value: 'Semua',
+                              child: Text('Semua'),
+                            ),
                             ..._monthItems.map((m) {
                               return DropdownMenuItem<String>(
                                 value: m['code'],
@@ -999,7 +1030,10 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen>
                   children: [
                     const Text(
                       'Tahun',
-                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                     const SizedBox(height: 6),
                     Container(
@@ -1014,7 +1048,10 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen>
                           value: _filterYear,
                           isExpanded: true,
                           items: _yearsList.map((y) {
-                            return DropdownMenuItem<String>(value: y, child: Text(y));
+                            return DropdownMenuItem<String>(
+                              value: y,
+                              child: Text(y),
+                            );
                           }).toList(),
                           onChanged: (v) {
                             if (v != null) {
@@ -1039,7 +1076,10 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen>
                   children: [
                     const Text(
                       'Shift',
-                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                     const SizedBox(height: 6),
                     Container(
@@ -1054,7 +1094,10 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen>
                           value: _filterShiftId,
                           isExpanded: true,
                           items: [
-                            const DropdownMenuItem(value: 'Semua', child: Text('Semua')),
+                            const DropdownMenuItem(
+                              value: 'Semua',
+                              child: Text('Semua'),
+                            ),
                             ..._shifts.map((s) {
                               return DropdownMenuItem<String>(
                                 value: s['id'].toString(),
@@ -1085,28 +1128,36 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen>
           Wrap(
             spacing: 6,
             runSpacing: 6,
-            children: ['Semua', 'Tepat Waktu', 'Terlambat', 'Libur', 'Tidak Hadir'].map((st) {
-              final active = _filterStatus == st;
-              return ChoiceChip(
-                label: Text(st),
-                selected: active,
-                onSelected: (selected) {
-                  if (selected) {
-                    setState(() {
-                      _filterStatus = st;
-                      _applyFilters();
-                    });
-                  }
-                },
-                selectedColor: AppTheme.primaryColor,
-                backgroundColor: const Color(0xFFF1F5F9),
-                labelStyle: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  color: active ? Colors.white : AppTheme.textSecondary,
-                ),
-              );
-            }).toList(),
+            children:
+                [
+                  'Semua',
+                  'Tepat Waktu',
+                  'Terlambat',
+                  'Libur',
+                  'Tidak Hadir',
+                ].map((st) {
+                  final active = _filterStatus == st;
+                  return ChoiceChip(
+                    label: Text(st),
+                    selected: active,
+                    onSelected: (selected) {
+                      if (selected) {
+                        setState(() {
+                          _filterStatus = st;
+                          _applyFilters();
+                        });
+                      }
+                    },
+                    selectedColor: AppTheme.primaryColor,
+                    checkmarkColor: Colors.white,
+                    backgroundColor: const Color(0xFFF1F5F9),
+                    labelStyle: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: active ? Colors.white : AppTheme.textSecondary,
+                    ),
+                  );
+                }).toList(),
           ),
         ],
       ),
@@ -1121,8 +1172,8 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen>
     final Color badgeColor = isTerlambat
         ? const Color(0xFFD97706)
         : isLibur
-            ? const Color(0xFF2563EB)
-            : AppTheme.successColor;
+        ? const Color(0xFF2563EB)
+        : AppTheme.successColor;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -1150,7 +1201,8 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen>
                   radius: 20,
                   backgroundColor: AppTheme.primaryColor.withValues(alpha: 0.1),
                   child: Text(
-                    record['user_name'] != null && record['user_name'].toString().isNotEmpty
+                    record['user_name'] != null &&
+                            record['user_name'].toString().isNotEmpty
                         ? record['user_name'].toString()[0].toUpperCase()
                         : '?',
                     style: const TextStyle(
@@ -1172,7 +1224,10 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen>
                           color: AppTheme.textPrimary,
                         ),
                       ),
-                      Row(
+                      Wrap(
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: 6,
+                        runSpacing: 0,
                         children: [
                           Text(
                             record['user_role'] ?? 'Staff',
@@ -1182,9 +1237,6 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen>
                               color: AppTheme.textSecondary,
                             ),
                           ),
-                          const SizedBox(width: 6),
-                          const Text('•', style: TextStyle(color: Color(0xFF94A3B8))),
-                          const SizedBox(width: 6),
                           Text(
                             '${record['day']}, ${record['date']}',
                             style: const TextStyle(
@@ -1198,7 +1250,10 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen>
                   ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3.5,
+                  ),
                   decoration: BoxDecoration(
                     color: badgeColor.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(8),
@@ -1224,10 +1279,26 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen>
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                _timeCol('Shift', record['shift_name'] ?? '-', Icons.work_outline_rounded),
-                _timeCol('Masuk', record['checkIn'] ?? '-', Icons.login_rounded),
-                _timeCol('Keluar', record['checkOut'] ?? '-', Icons.logout_rounded),
-                _timeCol('Durasi', record['duration'] ?? '-', Icons.timer_outlined),
+                _timeCol(
+                  'Shift',
+                  record['shift_name'] ?? '-',
+                  Icons.work_outline_rounded,
+                ),
+                _timeCol(
+                  'Masuk',
+                  record['checkIn'] ?? '-',
+                  Icons.login_rounded,
+                ),
+                _timeCol(
+                  'Keluar',
+                  record['checkOut'] ?? '-',
+                  Icons.logout_rounded,
+                ),
+                _timeCol(
+                  'Durasi',
+                  record['duration'] ?? '-',
+                  Icons.timer_outlined,
+                ),
               ],
             ),
           ),
@@ -1242,7 +1313,11 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen>
               children: [
                 TextButton.icon(
                   onPressed: () => _showEditDialog(record),
-                  icon: const Icon(Icons.edit_rounded, size: 15, color: AppTheme.primaryColor),
+                  icon: const Icon(
+                    Icons.edit_rounded,
+                    size: 15,
+                    color: AppTheme.primaryColor,
+                  ),
                   label: const Text(
                     'Edit',
                     style: TextStyle(
@@ -1255,7 +1330,11 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen>
                 const SizedBox(width: 8),
                 TextButton.icon(
                   onPressed: () => _showDeleteConfirm(record),
-                  icon: const Icon(Icons.delete_outline_rounded, size: 15, color: AppTheme.errorColor),
+                  icon: const Icon(
+                    Icons.delete_outline_rounded,
+                    size: 15,
+                    color: AppTheme.errorColor,
+                  ),
                   label: const Text(
                     'Hapus',
                     style: TextStyle(
@@ -1283,7 +1362,10 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen>
             const SizedBox(width: 4),
             Text(
               label,
-              style: const TextStyle(fontSize: 10.5, color: AppTheme.textSecondary),
+              style: const TextStyle(
+                fontSize: 10.5,
+                color: AppTheme.textSecondary,
+              ),
             ),
           ],
         ),
@@ -1311,7 +1393,11 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen>
       ),
       child: Column(
         children: [
-          const Icon(Icons.event_busy_rounded, size: 42, color: Color(0xFF94A3B8)),
+          const Icon(
+            Icons.event_busy_rounded,
+            size: 42,
+            color: Color(0xFF94A3B8),
+          ),
           const SizedBox(height: 12),
           const Text(
             'Tidak ada riwayat presensi yang sesuai filter.',

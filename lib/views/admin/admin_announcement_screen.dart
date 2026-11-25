@@ -63,28 +63,31 @@ class _AdminAnnouncementScreenState extends State<AdminAnnouncementScreen>
     final published = _parseDateTime(pub);
     final expired = _parseDateTime(exp);
 
-    if (published != null && now.isBefore(published))
+    if (published != null && now.isBefore(published)) {
       return _AnnStatus.scheduled;
-    if (expired != null && now.isAfter(expired)) return _AnnStatus.expired;
-    return _AnnStatus.active;
-  }
-
-  DateTime? _tryParseDate(String s) {
-    try {
-      return DateTime.tryParse(s);
-    } catch (_) {
-      return null;
     }
+    if (expired != null && now.isAfter(expired)) {
+      return _AnnStatus.expired;
+    }
+    return _AnnStatus.active;
   }
 
   /// Parse nilai tanggal dari database (String / DateTime) lengkap dengan jam.
   DateTime? _parseDateTime(dynamic raw) {
-    if (raw == null) return null;
-    if (raw is DateTime) return raw;
+    if (raw == null) {
+      return null;
+    }
+    if (raw is DateTime) {
+      return raw;
+    }
     final str = raw.toString().trim();
-    if (str.isEmpty) return null;
+    if (str.isEmpty) {
+      return null;
+    }
     final d = DateTime.tryParse(str.replaceFirst(' ', 'T'));
-    if (d == null) return null;
+    if (d == null) {
+      return null;
+    }
     // Nilai di database adalah jam apa adanya (WIB): buang penanda UTC/Z
     // supaya tidak bergeser 7 jam.
     return DateTime(d.year, d.month, d.day, d.hour, d.minute, d.second);
@@ -285,7 +288,7 @@ class _AdminAnnouncementScreenState extends State<AdminAnnouncementScreen>
               setDS(() => loading = false);
               if (ok) {
                 Navigator.pop(dialogCtx, true);
-                if (context.mounted) {
+                if (mounted) {
                   CustomSnackbar.success(
                     context,
                     isEdit
@@ -970,6 +973,7 @@ class _AdminAnnouncementScreenState extends State<AdminAnnouncementScreen>
             selected: _activeFilter == null,
             onSelected: (_) => setState(() => _activeFilter = null),
             selectedColor: AppTheme.primaryColor,
+            checkmarkColor: Colors.white,
             backgroundColor: const Color(0xFFF1F5F9),
             labelStyle: TextStyle(
               fontSize: 12,
@@ -995,6 +999,7 @@ class _AdminAnnouncementScreenState extends State<AdminAnnouncementScreen>
                 onSelected: (_) =>
                     setState(() => _activeFilter = isSelected ? null : status),
                 selectedColor: _statusColor(status),
+                checkmarkColor: Colors.white,
                 backgroundColor: const Color(0xFFF1F5F9),
                 labelStyle: TextStyle(
                   fontSize: 12,
@@ -1123,18 +1128,24 @@ class _AdminAnnouncementScreenState extends State<AdminAnnouncementScreen>
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       floatingActionButton: Padding(
-        // Naikkan tombol supaya tidak tertutup bottom navigation bar.
-        // Ubah angka 80 jika masih terlalu rendah / terlalu tinggi.
-        padding: const EdgeInsets.only(bottom: 80),
+        // Sama dengan tombol di sick_leave_history_screen (bottom: 88).
+        padding: const EdgeInsets.only(bottom: 88.0),
         child: FloatingActionButton.extended(
           onPressed: () async {
             await _showAddDialog();
             if (mounted) _loadData();
           },
           backgroundColor: AppTheme.primaryColor,
-          foregroundColor: Colors.white,
-          icon: const Icon(Icons.add_rounded),
-          label: const Text('Tambah'),
+          elevation: 6,
+          icon: const Icon(Icons.add_rounded, color: Colors.white, size: 22),
+          label: const Text(
+            'Tambah Pengumuman',
+            style: TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w700,
+              fontSize: 14,
+            ),
+          ),
         ),
       ),
     );

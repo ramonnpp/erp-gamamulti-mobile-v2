@@ -787,11 +787,13 @@ class _ActivityLogScreenState extends State<ActivityLogScreen>
 
   Widget _buildEmptyState() {
     final hasFilter = _activeFilterCount > 0;
-    return Center(
+    return Align(
+      alignment: Alignment.topCenter,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 40),
+        padding: const EdgeInsets.fromLTRB(32, 32, 32, 0),
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.start,
           children: [
             Container(
               padding: const EdgeInsets.all(18),
