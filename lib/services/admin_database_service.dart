@@ -75,7 +75,7 @@ class AdminDatabaseService {
         result = await conn.execute(
           Sql.named('''
             SELECT a.id, u.name, u.role, a.date, a.type, a.timestamp,
-                   COALESCE(s.name, 'N/A') AS shift_name, a.status
+                   COALESCE(s.name, 'N/A') AS shift_name, a.status, a.shift_id, a.user_id
             FROM attendance a
             JOIN users u ON u.id = a.user_id
             LEFT JOIN shifts s ON s.id = a.shift_id
@@ -88,7 +88,7 @@ class AdminDatabaseService {
         result = await conn.execute(
           Sql.named('''
             SELECT a.id, u.name, u.role, a.date, a.type, a.timestamp,
-                   COALESCE(s.name, 'N/A') AS shift_name, a.status
+                   COALESCE(s.name, 'N/A') AS shift_name, a.status, a.shift_id, a.user_id
             FROM attendance a
             JOIN users u ON u.id = a.user_id
             LEFT JOIN shifts s ON s.id = a.shift_id
@@ -107,6 +107,8 @@ class AdminDatabaseService {
           'timestamp': row[5]?.toString() ?? '',
           'shift_name': row[6]?.toString() ?? '',
           'status': row[7]?.toString() ?? '',
+          'shift_id': row[8]?.toString() ?? '',
+          'user_id': row[9]?.toString() ?? '',
         });
       }
       return rows;
