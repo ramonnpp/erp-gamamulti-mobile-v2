@@ -401,6 +401,85 @@ class AdminDatabaseService {
     }
   }
 
+  // ---------- Grafik & aktivitas admin (Home Admin) ----------
+
+  /// Jumlah karyawan yang check-in per hari selama 7 hari terakhir (termasuk hari ini),
+  /// lengkap dengan jumlah yang terlambat. Hari tanpa data tetap muncul dengan nilai 0.
+  Future<List<Map<String, dynamic>>> getAttendanceLast7Days() async {
+    _ensureAdmin();
+    try {
+      final conn = await DatabaseService().connect();
+      final result = await conn.execute(
+        Sql.named('''
+          SELECT CAST(d AS DATE) AS day,
+                 COUNT(DISTINCT a.user_id) AS hadir,
+                 COUNT(DISTINCT a.user_id) FILTER (WHERE a.status ILIKE '%terlambat%') AS terlambat
+          FROM generate_series(CURRENT_DATE - 6, CURRENT_DATE, INTERVAL '1 day') AS d
+          LEFT JOIN attendance a
+                 ON a.date = CAST(d AS DATE) AND a.type = 'CheckIn'
+          GROUP BY d
+          ORDER BY d
+        '''),
+      );
+      return result
+          .map(
+            (row) => <String, dynamic>{
+              'date': row[0]?.toString(),
+              'present': (row[1] as num?)?.toInt() ?? 0,
+              'late': (row[2] as num?)?.toInt() ?? 0,
+            },
+          )
+          .toList();
+    } catch (e) {
+      debugPrint('Error ambil grafik presensi 7 hari: $e');
+      return [];
+    }
+  }
+
+  /// Aktivitas admin terbaru dari admin_audit_logs.
+  /// 'age_seconds' dihitung di database supaya tidak terpengaruh zona waktu.
+  Future<List<Map<String, dynamic>>> getRecentAuditLogs({int limit = 5}) async {
+    _ensureAdmin();
+    try {
+      final conn = await DatabaseService().connect();
+      final result = await conn.execute(
+        Sql.named('''
+          SELECT l.id, l.action, l.target_table, l.target_id, l.details,
+                 l.created_at, u.name,
+                 CAST(EXTRACT(EPOCH FROM (NOW() - l.created_at)) AS BIGINT) AS age_seconds
+          FROM admin_audit_logs l
+          LEFT JOIN users u ON u.id = l.admin_id
+          ORDER BY l.created_at DESC, l.id DESC
+          LIMIT @limit
+        '''),
+        parameters: {'limit': limit},
+      );
+      return result.map((row) {
+        dynamic details = row[4];
+        if (details is String) {
+          try {
+            details = jsonDecode(details);
+          } catch (_) {
+            details = null;
+          }
+        }
+        return <String, dynamic>{
+          'id': row[0],
+          'action': row[1]?.toString() ?? '',
+          'target_table': row[2]?.toString() ?? '',
+          'target_id': row[3],
+          'details': details is Map ? Map<String, dynamic>.from(details) : null,
+          'created_at': row[5]?.toString(),
+          'admin_name': row[6]?.toString() ?? 'Admin',
+          'age_seconds': (row[7] as num?)?.toInt(),
+        };
+      }).toList();
+    } catch (e) {
+      debugPrint('Error ambil audit log terbaru: $e');
+      return [];
+    }
+  }
+
   // ---------- Announcements ----------
 
   /// Ambil semua pengumuman.
@@ -531,18 +610,12 @@ class AdminDatabaseService {
       );
 
       final newId = result.first[0] as int;
-      await _logAudit(
-        createdBy,
-        'CREATE_ANNOUNCEMENT',
-        'announcements',
-        newId,
-        {
-          'title': title,
-          'category': category,
-          if (bytes != null) 'attachment_name': attachmentName,
-          if (bytes != null) 'attachment_size': bytes.length,
-        },
-      );
+      await _logAudit(createdBy, 'CREATE_ANNOUNCEMENT', 'announcements', newId, {
+        'title': title,
+        'category': category,
+        if (bytes != null) 'attachment_name': attachmentName,
+        if (bytes != null) 'attachment_size': bytes.length,
+      });
       return true;
     } catch (e) {
       debugPrint('Error buat announcement: $e');
@@ -620,19 +693,13 @@ class AdminDatabaseService {
         parameters: params,
       );
 
-      await _logAudit(
-        updatedBy,
-        'UPDATE_ANNOUNCEMENT',
-        'announcements',
-        announcementId,
-        {
-          'title': title,
-          'category': category,
-          'attachment': attachmentAction,
-          if (bytes != null) 'attachment_name': attachmentName,
-          if (bytes != null) 'attachment_size': bytes.length,
-        },
-      );
+      await _logAudit(updatedBy, 'UPDATE_ANNOUNCEMENT', 'announcements', announcementId, {
+        'title': title,
+        'category': category,
+        'attachment': attachmentAction,
+        if (bytes != null) 'attachment_name': attachmentName,
+        if (bytes != null) 'attachment_size': bytes.length,
+      });
       return true;
     } catch (e) {
       debugPrint('Error update announcement: $e');

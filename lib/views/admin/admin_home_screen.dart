@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../../theme/app_theme.dart';
 import '../../services/database_service.dart';
+import '../../services/admin_database_service.dart';
 import '../../announcements/announce-detail-screen.dart';
 import '../../widgets/custom_snackbar.dart';
 
@@ -19,6 +20,8 @@ class _AdminHomeScreenState extends State<AdminHomeScreen>
   List _sickToday = [];
   List _leaveToday = [];
   List _announcements = [];
+  List<Map<String, dynamic>> _weekly = [];
+  List<Map<String, dynamic>> _auditLogs = [];
 
   String _infoFilter = 'Semua';
   late DateTime _now;
@@ -63,6 +66,16 @@ class _AdminHomeScreenState extends State<AdminHomeScreen>
     final profileRefresh = db.refreshCurrentUser(); // sinkron foto & nama
     final info = await db.getTodayLeaveInfo();
     final ann = await db.getActiveAnnouncements();
+
+    List<Map<String, dynamic>> weekly = [];
+    List<Map<String, dynamic>> logs = [];
+    try {
+      final adminDb = AdminDatabaseService();
+      weekly = await adminDb.getAttendanceLast7Days();
+      logs = await adminDb.getRecentAuditLogs(limit: 5);
+    } catch (e) {
+      debugPrint('Error load data admin: $e');
+    }
     await profileRefresh;
 
     if (!mounted) return;
@@ -70,6 +83,8 @@ class _AdminHomeScreenState extends State<AdminHomeScreen>
       _sickToday = (info['sick'] as List?) ?? [];
       _leaveToday = (info['leave'] as List?) ?? [];
       _announcements = ann;
+      _weekly = weekly;
+      _auditLogs = logs;
     });
   }
 
@@ -84,11 +99,395 @@ class _AdminHomeScreenState extends State<AdminHomeScreen>
   String get _todayId => DateFormat('EEEE, dd MMMM yyyy', 'id_ID').format(_now);
 
   void _openAnnouncementDetail(Map<String, dynamic> announcement) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => AnnounceDetailScreen(announcement: announcement),
+    Navigator.push(context, AnnounceDetailScreen.route(announcement));
+  }
+
+  // ---------- Kartu umum (header abu-abu + garis aksen, sama seperti Home) ----------
+  Widget _cardShell({
+    required String title,
+    Widget? trailing,
+    required Widget child,
+  }) {
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFD0D9E4)),
       ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.fromLTRB(16, 13, 16, 13),
+            decoration: const BoxDecoration(
+              color: Color(0xFFF1F5F9),
+              border: Border(bottom: BorderSide(color: Color(0xFFDCE3EC))),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 4,
+                  height: 16,
+                  decoration: BoxDecoration(
+                    color: AppTheme.accentColor,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(width: 9),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w800,
+                      color: AppTheme.textPrimary,
+                    ),
+                  ),
+                ),
+                if (trailing != null) trailing,
+              ],
+            ),
+          ),
+          Padding(padding: const EdgeInsets.all(16), child: child),
+        ],
+      ),
+    );
+  }
+
+  // ---------- Grafik kehadiran 7 hari terakhir ----------
+  static const Color _lateColor = Color(0xFFEA580C);
+
+  Widget _legendDot(Color color, String label) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 4),
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 10.5,
+            fontWeight: FontWeight.w600,
+            color: AppTheme.textSecondary,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _attendanceChartCard() {
+    const double maxBarHeight = 110;
+    int maxVal = 1;
+    for (final d in _weekly) {
+      final v = (d['present'] as int?) ?? 0;
+      if (v > maxVal) maxVal = v;
+    }
+    final today = DateTime(_now.year, _now.month, _now.day);
+
+    return _cardShell(
+      title: 'Kehadiran 7 Hari Terakhir',
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _legendDot(AppTheme.primaryColor, 'Tepat'),
+          const SizedBox(width: 10),
+          _legendDot(_lateColor, 'Terlambat'),
+        ],
+      ),
+      child: _weekly.isEmpty
+          ? const Padding(
+              padding: EdgeInsets.symmetric(vertical: 18),
+              child: Center(
+                child: Text(
+                  'Data kehadiran belum tersedia.',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.textSecondary,
+                  ),
+                ),
+              ),
+            )
+          : Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: List.generate(_weekly.length, (i) {
+                final d = _weekly[i];
+                final present = (d['present'] as int?) ?? 0;
+                final late = (d['late'] as int?) ?? 0;
+                final parsed = DateTime.tryParse(d['date']?.toString() ?? '');
+                final date = parsed == null
+                    ? null
+                    : DateTime(parsed.year, parsed.month, parsed.day);
+                final isToday = date != null && date == today;
+                final label = date == null
+                    ? '-'
+                    : DateFormat('E', 'id_ID').format(date);
+
+                final ratio = present / maxVal;
+                final totalH = present == 0 ? 3.0 : (maxBarHeight * ratio).clamp(8.0, maxBarHeight);
+                final lateH = present == 0 ? 0.0 : totalH * (late / present);
+                final onTimeH = totalH - lateH;
+
+                return Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      Text(
+                        '$present',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w800,
+                          color: isToday
+                              ? AppTheme.primaryColor
+                              : AppTheme.textSecondary,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      // Batang tumbuh dari bawah, tiap hari sedikit lebih lambat
+                      TweenAnimationBuilder<double>(
+                        key: ValueKey('bar_${d['date']}_${present}_$late'),
+                        tween: Tween(begin: 0, end: 1),
+                        duration: Duration(milliseconds: 500 + i * 70),
+                        curve: Curves.easeOutCubic,
+                        builder: (context, v, _) {
+                          return ClipRRect(
+                            borderRadius: const BorderRadius.vertical(
+                              top: Radius.circular(7),
+                            ),
+                            child: SizedBox(
+                              width: 22,
+                              height: totalH * v,
+                              child: present == 0
+                                  ? const ColoredBox(color: Color(0xFFCBD5E1))
+                                  : Column(
+                                      children: [
+                                        if (late > 0)
+                                          Expanded(
+                                            flex: (lateH * 100).round().clamp(1, 1000000),
+                                            child: const ColoredBox(
+                                              color: _lateColor,
+                                              child: SizedBox.expand(),
+                                            ),
+                                          ),
+                                        Expanded(
+                                          flex: (onTimeH * 100).round().clamp(1, 1000000),
+                                          child: ColoredBox(
+                                            color: isToday
+                                                ? AppTheme.primaryColor
+                                                : AppTheme.primaryColor.withValues(alpha: 0.78),
+                                            child: const SizedBox.expand(),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                            ),
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: isToday
+                              ? AppTheme.accentColor
+                              : Colors.transparent,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          label,
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: isToday
+                                ? FontWeight.w800
+                                : FontWeight.w600,
+                            color: isToday
+                                ? AppTheme.primaryColor
+                                : AppTheme.textSecondary,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+            ),
+    );
+  }
+
+  // ---------- Aktivitas admin terbaru ----------
+  ({String label, IconData icon, Color color}) _auditMeta(String action) {
+    switch (action) {
+      case 'UPDATE_ATTENDANCE':
+        return (
+          label: 'Mengubah presensi',
+          icon: Icons.edit_calendar_rounded,
+          color: const Color(0xFFEA580C),
+        );
+      case 'DELETE_ATTENDANCE':
+        return (
+          label: 'Menghapus presensi',
+          icon: Icons.event_busy_rounded,
+          color: const Color(0xFFDC2626),
+        );
+      case 'DELETE_LEAVE_REQUEST':
+        return (
+          label: 'Menghapus pengajuan cuti',
+          icon: Icons.delete_outline_rounded,
+          color: const Color(0xFFDC2626),
+        );
+      case 'DELETE_ACTIVITY_LOG':
+        return (
+          label: 'Menghapus log aktivitas',
+          icon: Icons.delete_outline_rounded,
+          color: const Color(0xFFDC2626),
+        );
+      case 'CREATE_ANNOUNCEMENT':
+        return (
+          label: 'Membuat pengumuman',
+          icon: Icons.campaign_rounded,
+          color: const Color(0xFF15803D),
+        );
+      case 'UPDATE_ANNOUNCEMENT':
+        return (
+          label: 'Mengubah pengumuman',
+          icon: Icons.edit_rounded,
+          color: const Color(0xFFEA580C),
+        );
+      case 'DELETE_ANNOUNCEMENT':
+        return (
+          label: 'Menghapus pengumuman',
+          icon: Icons.delete_forever_rounded,
+          color: const Color(0xFFDC2626),
+        );
+      default:
+        return (
+          label: action.replaceAll('_', ' ').toLowerCase(),
+          icon: Icons.history_rounded,
+          color: AppTheme.textSecondary,
+        );
+    }
+  }
+
+  String _ago(int? seconds, String? created) {
+    if (seconds == null) return '';
+    if (seconds < 60) return 'Baru saja';
+    if (seconds < 3600) return '${seconds ~/ 60} mnt lalu';
+    if (seconds < 86400) return '${seconds ~/ 3600} jam lalu';
+    if (seconds < 7 * 86400) return '${seconds ~/ 86400} hari lalu';
+    final d = DateTime.tryParse((created ?? '').replaceFirst(' ', 'T'));
+    return d == null ? '' : DateFormat('dd MMM yyyy', 'id_ID').format(d);
+  }
+
+  Widget _auditRow(Map<String, dynamic> log) {
+    final meta = _auditMeta(log['action']?.toString() ?? '');
+    final details = log['details'] as Map<String, dynamic>?;
+    final extra = details?['title']?.toString();
+    final admin = log['admin_name']?.toString() ?? 'Admin';
+    final subtitle = (extra != null && extra.isNotEmpty)
+        ? '$admin • $extra'
+        : admin;
+    final ago = _ago(log['age_seconds'] as int?, log['created_at']?.toString());
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF8FAFC),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: meta.color.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(meta.icon, size: 18, color: meta.color),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    meta.label,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13,
+                      color: AppTheme.textPrimary,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
+                      fontSize: 11.5,
+                      color: AppTheme.textSecondary,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              ago,
+              style: const TextStyle(
+                fontSize: 10.5,
+                fontWeight: FontWeight.w600,
+                color: AppTheme.textSecondary,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _auditCard() {
+    return _cardShell(
+      title: 'Aktivitas Admin Terbaru',
+      child: _auditLogs.isEmpty
+          ? Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFEF9E7),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFF7DC6F)),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.history_rounded, color: Color(0xFFB7791F), size: 20),
+                  SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Belum ada aktivitas admin.',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF975A16),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            )
+          : Column(children: _auditLogs.map(_auditRow).toList()),
     );
   }
 
@@ -312,7 +711,17 @@ class _AdminHomeScreenState extends State<AdminHomeScreen>
                       const SizedBox(height: 16),
                       _AnimatedDashboardBlock(
                         delayMs: 140,
+                        child: _attendanceChartCard(),
+                      ),
+                      const SizedBox(height: 16),
+                      _AnimatedDashboardBlock(
+                        delayMs: 230,
                         child: _announcementCard(),
+                      ),
+                      const SizedBox(height: 16),
+                      _AnimatedDashboardBlock(
+                        delayMs: 320,
+                        child: _auditCard(),
                       ),
                     ],
                   ),
