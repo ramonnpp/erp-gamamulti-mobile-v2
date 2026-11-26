@@ -14,10 +14,11 @@ import '../admin/admin_attendance_screen.dart';
 import '../admin/admin_leave_screen.dart';
 import '../admin/admin_activity_log_screen.dart';
 import '../admin/admin_announcement_screen.dart';
+import '../admin/admin_user_management_screen.dart';
 
-enum _NavKind { screen, attendanceGroup, leaveGroup }
+enum _NavKind { screen, attendanceGroup, leaveGroup, profileGroup }
 
-enum _PopupGroup { none, attendance, leave }
+enum _PopupGroup { none, attendance, leave, profile }
 
 class MainNavigation extends StatefulWidget {
   const MainNavigation({super.key});
@@ -34,6 +35,7 @@ class _MainNavigationState extends State<MainNavigation>
 
   final GlobalKey _attendanceTabKey = GlobalKey();
   final GlobalKey _leaveTabKey = GlobalKey();
+  final GlobalKey _profileTabKey = GlobalKey();
 
   late Widget _activeScreen;
   late AnimationController _fadeController;
@@ -87,9 +89,8 @@ class _MainNavigationState extends State<MainNavigation>
         _NavItem(
           icon: Icons.person_outline_rounded,
           selectedIcon: Icons.person_rounded,
-          label: 'Profil',
-          kind: _NavKind.screen,
-          screenIndex: 5,
+          label: 'Profile',
+          kind: _NavKind.profileGroup,
         ),
       ];
     }
@@ -145,6 +146,8 @@ class _MainNavigationState extends State<MainNavigation>
           return const AdminAnnouncementScreen();
         case 5:
           return const ProfileScreen();
+        case 6:
+          return const AdminUserManagementScreen();
         default:
           return const AdminHomeScreen();
       }
@@ -224,9 +227,20 @@ class _MainNavigationState extends State<MainNavigation>
   }
 
   void _openPopup(_PopupGroup group) {
-    final anchorKey = group == _PopupGroup.attendance
-        ? _attendanceTabKey
-        : _leaveTabKey;
+    final GlobalKey anchorKey;
+    switch (group) {
+      case _PopupGroup.attendance:
+        anchorKey = _attendanceTabKey;
+        break;
+      case _PopupGroup.leave:
+        anchorKey = _leaveTabKey;
+        break;
+      case _PopupGroup.profile:
+        anchorKey = _profileTabKey;
+        break;
+      case _PopupGroup.none:
+        return;
+    }
     final centerX = _measureTabCenterX(anchorKey);
 
     setState(() {
@@ -423,6 +437,15 @@ class _MainNavigationState extends State<MainNavigation>
       return;
     }
 
+    if (item.kind == _NavKind.profileGroup) {
+      if (_activePopup == _PopupGroup.profile) {
+        _closePopup();
+      } else {
+        _openPopup(_PopupGroup.profile);
+      }
+      return;
+    }
+
     _closePopup(
       afterClose: () {
         if (!mounted) return;
@@ -489,6 +512,36 @@ class _MainNavigationState extends State<MainNavigation>
             afterClose: () {
               if (!mounted) return;
               _switchToScreen(widget: const LeaveHistoryScreen(), navIndex: 2);
+            },
+          ),
+        ),
+      ];
+    }
+
+    if (_activePopup == _PopupGroup.profile) {
+      return [
+        _PopupOption(
+          icon: Icons.manage_accounts_rounded,
+          label: 'Kelola User',
+          accentColor: AppTheme.primaryColor,
+          onTap: () => _closePopup(
+            afterClose: () {
+              if (!mounted) return;
+              _switchToScreen(
+                widget: const AdminUserManagementScreen(),
+                navIndex: 5,
+              );
+            },
+          ),
+        ),
+        _PopupOption(
+          icon: Icons.person_rounded,
+          label: 'Profil Saya',
+          accentColor: AppTheme.accentColor,
+          onTap: () => _closePopup(
+            afterClose: () {
+              if (!mounted) return;
+              _switchToScreen(widget: const ProfileScreen(), navIndex: 5);
             },
           ),
         ),
@@ -583,15 +636,11 @@ class _MainNavigationState extends State<MainNavigation>
     final double navBottomMargin = bottomPadding > 0 ? bottomPadding + 6 : 16;
     final double bottomOffset = navBottomMargin + 88;
     final double fallbackCenterX =
-        screenWidth * (_activePopup == _PopupGroup.attendance ? 0.30 : 0.50);
+        screenWidth *
+        (_activePopup == _PopupGroup.attendance
+            ? 0.30
+            : (_activePopup == _PopupGroup.profile ? 0.85 : 0.50));
     final double centerX = _popupAnchorCenterX ?? fallbackCenterX;
-
-    const double estimatedClusterWidth = 256;
-    final double rawLeft = centerX - (estimatedClusterWidth / 2);
-    final double clampedLeft = rawLeft.clamp(
-      16.0,
-      (screenWidth - estimatedClusterWidth - 16.0).clamp(16.0, double.infinity),
-    );
 
     return Positioned.fill(
       child: Stack(
@@ -603,23 +652,32 @@ class _MainNavigationState extends State<MainNavigation>
               child: const SizedBox.expand(),
             ),
           ),
-          Positioned(
-            left: clampedLeft,
-            bottom: bottomOffset,
-            child: FadeTransition(
-              opacity: _popupOpacity,
-              child: SlideTransition(
-                position: _popupSlide,
-                child: ScaleTransition(
-                  scale: _popupScale,
-                  alignment: Alignment.bottomCenter,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _buildFloatingPill(options[0]),
-                      const SizedBox(width: 10),
-                      _buildFloatingPill(options[1]),
-                    ],
+          // Posisi dihitung dari lebar popup yang SEBENARNYA, jadi tidak
+          // pernah keluar layar (termasuk untuk tab paling kanan).
+          Positioned.fill(
+            child: CustomSingleChildLayout(
+              delegate: _PopupLayoutDelegate(
+                centerX: centerX,
+                bottomOffset: bottomOffset,
+              ),
+              child: FadeTransition(
+                opacity: _popupOpacity,
+                child: SlideTransition(
+                  position: _popupSlide,
+                  child: ScaleTransition(
+                    scale: _popupScale,
+                    alignment: Alignment.bottomCenter,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _buildFloatingPill(options[0]),
+                          const SizedBox(width: 10),
+                          _buildFloatingPill(options[1]),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -634,6 +692,7 @@ class _MainNavigationState extends State<MainNavigation>
     final kind = _items[index].kind;
     if (kind == _NavKind.attendanceGroup) return _attendanceTabKey;
     if (kind == _NavKind.leaveGroup) return _leaveTabKey;
+    if (kind == _NavKind.profileGroup) return _profileTabKey;
     return null;
   }
 
@@ -693,7 +752,9 @@ class _MainNavigationState extends State<MainNavigation>
                     (item.kind == _NavKind.attendanceGroup &&
                         _activePopup == _PopupGroup.attendance) ||
                     (item.kind == _NavKind.leaveGroup &&
-                        _activePopup == _PopupGroup.leave);
+                        _activePopup == _PopupGroup.leave) ||
+                    (item.kind == _NavKind.profileGroup &&
+                        _activePopup == _PopupGroup.profile);
                 final selected = index == _currentIndex || isPopupOpen;
 
                 return Expanded(
@@ -791,4 +852,40 @@ class _PopupOption {
     required this.accentColor,
     required this.onTap,
   });
+}
+
+/// Menaruh popup tepat di atas tab, rata tengah terhadap tab, lalu digeser
+/// seperlunya agar selalu berada di dalam layar (margin 16).
+class _PopupLayoutDelegate extends SingleChildLayoutDelegate {
+  final double centerX;
+  final double bottomOffset;
+
+  const _PopupLayoutDelegate({
+    required this.centerX,
+    required this.bottomOffset,
+  });
+
+  @override
+  BoxConstraints getConstraintsForChild(BoxConstraints constraints) {
+    return BoxConstraints(
+      maxWidth: constraints.maxWidth - 32,
+      maxHeight: constraints.maxHeight,
+    );
+  }
+
+  @override
+  Offset getPositionForChild(Size size, Size childSize) {
+    final double maxLeft = size.width - childSize.width - 16.0;
+    double left = centerX - (childSize.width / 2);
+    if (left > maxLeft) left = maxLeft;
+    if (left < 16.0) left = 16.0;
+    final double top = size.height - bottomOffset - childSize.height;
+    return Offset(left, top);
+  }
+
+  @override
+  bool shouldRelayout(_PopupLayoutDelegate oldDelegate) {
+    return oldDelegate.centerX != centerX ||
+        oldDelegate.bottomOffset != bottomOffset;
+  }
 }

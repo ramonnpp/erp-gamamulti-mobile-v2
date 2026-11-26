@@ -368,6 +368,247 @@ class AdminDatabaseService {
 
   // ---------- Summary Dashboard Admin ----------
 
+  /// Ambil statistik ringkasan user (Total, Admin, User).
+  Future<Map<String, int>> getUserStats() async {
+    _ensureAdmin();
+    try {
+      final conn = await DatabaseService().connect();
+      final result = await conn.execute(
+        Sql.named('''
+          SELECT
+            COUNT(*) as total,
+            COUNT(*) FILTER (WHERE role = 'admin') as admin_count,
+            COUNT(*) FILTER (WHERE role != 'admin') as user_count
+          FROM users
+        '''),
+      );
+      if (result.isEmpty) return {'total': 0, 'admin': 0, 'user': 0};
+      final row = result.first;
+      return {
+        'total': row[0] as int,
+        'admin': row[1] as int,
+        'user': row[2] as int,
+      };
+    } catch (e) {
+      debugPrint('Error ambil statistik user: $e');
+      return {'total': 0, 'admin': 0, 'user': 0};
+    }
+  }
+
+  /// Ambil semua user dengan detail untuk manajemen user.
+  Future<List<Map<String, dynamic>>> getAllUsersDetail() async {
+    _ensureAdmin();
+    try {
+      final conn = await DatabaseService().connect();
+      final result = await conn.execute(
+        Sql.named(
+          'SELECT id, name, email, role, updated_at, phone FROM users ORDER BY role ASC, name ASC',
+        ),
+      );
+      return result
+          .map(
+            (row) => {
+              'id': row[0],
+              'name': row[1],
+              'email': row[2],
+              'role': row[3],
+              'updated_at': row[4]?.toString(),
+              'phone': row[5]?.toString(),
+            },
+          )
+          .toList();
+    } catch (e) {
+      debugPrint('Error ambil detail user: $e');
+      return [];
+    }
+  }
+
+  /// Create user baru.
+  Future<bool> createUser({
+    required int adminId,
+    required String name,
+    required String email,
+    required String password,
+    required String role,
+    String? phone,
+  }) async {
+    _ensureAdmin();
+    try {
+      final conn = await DatabaseService().connect();
+
+      // Cek email unik
+      final check = await conn.execute(
+        Sql.named('SELECT id FROM users WHERE email = @email'),
+        parameters: {'email': email},
+      );
+      if (check.isNotEmpty) {
+        throw Exception('Email sudah digunakan.');
+      }
+
+      final result = await conn.execute(
+        Sql.named('''
+          INSERT INTO users (name, email, password, role, phone, updated_at)
+          VALUES (@name, @email, @password, @role, @phone, CURRENT_TIMESTAMP)
+          RETURNING id
+        '''),
+        parameters: {
+          'name': name,
+          'email': email,
+          'password': password,
+          'role': role,
+          'phone': phone,
+        },
+      );
+
+      if (result.isNotEmpty) {
+        final newId = result.first[0] as int;
+        await _logAudit(adminId, 'CREATE_USER', 'users', newId, {
+          'name': name,
+          'email': email,
+          'role': role,
+        });
+        return true;
+      }
+      return false;
+    } catch (e) {
+      debugPrint('Error create user: $e');
+      rethrow;
+    }
+  }
+
+  /// Update user.
+  Future<bool> updateUser({
+    required int adminId,
+    required int targetUserId,
+    required String name,
+    required String email,
+    required String role,
+    String? phone,
+    String? newPassword,
+  }) async {
+    _ensureAdmin();
+    try {
+      final conn = await DatabaseService().connect();
+
+      // Validasi admin terakhir
+      if (role != 'admin') {
+        final adminCountRes = await conn.execute(
+          Sql.named("SELECT COUNT(*) FROM users WHERE role = 'admin'"),
+        );
+        final currentRoleRes = await conn.execute(
+          Sql.named("SELECT role FROM users WHERE id = @id"),
+          parameters: {'id': targetUserId},
+        );
+
+        if (currentRoleRes.isNotEmpty &&
+            currentRoleRes.first[0].toString() == 'admin' &&
+            (adminCountRes.first[0] as int) <= 1) {
+          throw Exception(
+            'Minimal harus terdapat satu akun Admin aktif di sistem.',
+          );
+        }
+      }
+
+      // Cek email unik (kecuali milik sendiri)
+      final check = await conn.execute(
+        Sql.named('SELECT id FROM users WHERE email = @email AND id != @id'),
+        parameters: {'email': email, 'id': targetUserId},
+      );
+      if (check.isNotEmpty) {
+        throw Exception('Email sudah digunakan oleh pengguna lain.');
+      }
+
+      String passwordSql = '';
+      if (newPassword != null && newPassword.isNotEmpty) {
+        passwordSql = ', password = @password';
+      }
+
+      await conn.execute(
+        Sql.named('''
+          UPDATE users
+          SET name = @name, email = @email, role = @role, phone = @phone,
+              updated_at = CURRENT_TIMESTAMP $passwordSql
+          WHERE id = @id
+        '''),
+        parameters: {
+          'name': name,
+          'email': email,
+          'role': role,
+          'phone': phone,
+          'id': targetUserId,
+          if (newPassword != null) 'password': newPassword,
+        },
+      );
+
+      await _logAudit(adminId, 'UPDATE_USER', 'users', targetUserId, {
+        'name': name,
+        'email': email,
+        'role': role,
+      });
+      return true;
+    } catch (e) {
+      debugPrint('Error update user: $e');
+      rethrow;
+    }
+  }
+
+  /// Hapus user.
+  Future<bool> deleteUser({
+    required int adminId,
+    required int targetUserId,
+  }) async {
+    _ensureAdmin();
+    if (adminId == targetUserId) {
+      throw Exception('Anda tidak dapat menghapus akun yang sedang digunakan.');
+    }
+
+    try {
+      final conn = await DatabaseService().connect();
+
+      // Cek admin terakhir
+      final targetRes = await conn.execute(
+        Sql.named('SELECT role, name, email FROM users WHERE id = @id'),
+        parameters: {'id': targetUserId},
+      );
+      if (targetRes.isEmpty) return false;
+
+      if (targetRes.first[0].toString() == 'admin') {
+        final adminCountRes = await conn.execute(
+          Sql.named("SELECT COUNT(*) FROM users WHERE role = 'admin'"),
+        );
+        if ((adminCountRes.first[0] as int) <= 1) {
+          throw Exception(
+            'Minimal harus terdapat satu akun Admin aktif di sistem.',
+          );
+        }
+      }
+
+      final targetName = targetRes.first[1];
+      final targetEmail = targetRes.first[2];
+
+      await conn.execute(
+        Sql.named('DELETE FROM users WHERE id = @id'),
+        parameters: {'id': targetUserId},
+      );
+
+      await _logAudit(adminId, 'DELETE_USER', 'users', targetUserId, {
+        'name': targetName,
+        'email': targetEmail,
+      });
+      return true;
+    } catch (e) {
+      debugPrint('Error delete user: $e');
+      if (e.toString().contains('23503')) {
+        throw Exception(
+          'User ini masih memiliki data terkait (presensi, izin, atau log), sehingga tidak bisa dihapus.',
+        );
+      }
+      rethrow;
+    }
+  }
+
+  // ---------- Summary Dashboard Admin ----------
+
   /// Ringkasan presensi, izin, dan aktivitas hari ini.
   Future<Map<String, int>> getTodayDashboardSummary() async {
     _ensureAdmin();
@@ -610,12 +851,18 @@ class AdminDatabaseService {
       );
 
       final newId = result.first[0] as int;
-      await _logAudit(createdBy, 'CREATE_ANNOUNCEMENT', 'announcements', newId, {
-        'title': title,
-        'category': category,
-        if (bytes != null) 'attachment_name': attachmentName,
-        if (bytes != null) 'attachment_size': bytes.length,
-      });
+      await _logAudit(
+        createdBy,
+        'CREATE_ANNOUNCEMENT',
+        'announcements',
+        newId,
+        {
+          'title': title,
+          'category': category,
+          if (bytes != null) 'attachment_name': attachmentName,
+          if (bytes != null) 'attachment_size': bytes.length,
+        },
+      );
       return true;
     } catch (e) {
       debugPrint('Error buat announcement: $e');
@@ -693,13 +940,19 @@ class AdminDatabaseService {
         parameters: params,
       );
 
-      await _logAudit(updatedBy, 'UPDATE_ANNOUNCEMENT', 'announcements', announcementId, {
-        'title': title,
-        'category': category,
-        'attachment': attachmentAction,
-        if (bytes != null) 'attachment_name': attachmentName,
-        if (bytes != null) 'attachment_size': bytes.length,
-      });
+      await _logAudit(
+        updatedBy,
+        'UPDATE_ANNOUNCEMENT',
+        'announcements',
+        announcementId,
+        {
+          'title': title,
+          'category': category,
+          'attachment': attachmentAction,
+          if (bytes != null) 'attachment_name': attachmentName,
+          if (bytes != null) 'attachment_size': bytes.length,
+        },
+      );
       return true;
     } catch (e) {
       debugPrint('Error update announcement: $e');
