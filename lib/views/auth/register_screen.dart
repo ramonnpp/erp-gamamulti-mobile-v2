@@ -32,7 +32,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       'icon': Icons.person_outline_rounded,
     },
     {
-      'label': 'Manager',
+      'label': 'Manajer',
       'desc': 'Kepala divisi',
       'icon': Icons.supervisor_account_outlined,
     },
@@ -40,11 +40,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
       'label': 'HR',
       'desc': 'Sumber daya manusia',
       'icon': Icons.groups_outlined,
-    },
-    {
-      'label': 'Admin',
-      'desc': 'Administrator sistem',
-      'icon': Icons.admin_panel_settings_outlined,
     },
   ];
 

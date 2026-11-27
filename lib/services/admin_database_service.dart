@@ -448,7 +448,7 @@ class AdminDatabaseService {
       final result = await conn.execute(
         Sql.named('''
           INSERT INTO users (name, email, password, role, phone, updated_at)
-          VALUES (@name, @email, @password, @role, @phone, CURRENT_TIMESTAMP)
+          VALUES (@name, @email, crypt(@password, gen_salt('bf')), @role, @phone, CURRENT_TIMESTAMP)
           RETURNING id
         '''),
         parameters: {
@@ -520,7 +520,7 @@ class AdminDatabaseService {
 
       String passwordSql = '';
       if (newPassword != null && newPassword.isNotEmpty) {
-        passwordSql = ', password = @password';
+        passwordSql = ", password = crypt(@password, gen_salt('bf'))";
       }
 
       await conn.execute(
@@ -536,7 +536,7 @@ class AdminDatabaseService {
           'role': role,
           'phone': phone,
           'id': targetUserId,
-          if (newPassword != null) 'password': newPassword,
+          if (newPassword != null && newPassword.isNotEmpty) 'password': newPassword,
         },
       );
 

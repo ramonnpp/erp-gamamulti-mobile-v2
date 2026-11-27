@@ -79,7 +79,9 @@ class DatabaseService {
     _connection = null;
   }
 
-  // Contoh query fetch data pengguna / autentikasi
+  // Verifikasi password user. Mendukung hash bcrypt (pgcrypto:
+  // crypt(password, gen_salt('bf'))) dan legacy plain text: akun lama yang
+  // masih plain text akan di-upgrade otomatis ke bcrypt saat berhasil login.
   Future<Map<String, dynamic>?> authenticateUser(
     String email,
     String password,
@@ -88,26 +90,62 @@ class DatabaseService {
       final conn = await connect();
       final result = await conn.execute(
         Sql.named(
-          'SELECT id, name, email, role, phone, profile_image, profile_image_data FROM users WHERE email = @email AND password = @password',
+          'SELECT id, name, email, role, phone, profile_image, profile_image_data, password FROM users WHERE email = @email',
         ),
-        parameters: {'email': email, 'password': password},
+        parameters: {'email': email},
       );
 
-      if (result.isNotEmpty) {
-        final row = result.first;
-        _currentUser = {
-          'id': row[0],
-          'name': row[1],
-          'email': row[2],
-          'role': row[3],
-          'phone': row[4]?.toString() ?? '',
-          'profile_image': row[5]?.toString(),
-          'profile_image_data': _toBytes(row[6]),
-        };
-        profileImageVersion.value++;
-        return _currentUser;
+      if (result.isEmpty) return null;
+      final row = result.first;
+      final stored = row[7]?.toString();
+      final isBcryptHash =
+          stored != null &&
+          (stored.startsWith(r'$2a$') ||
+              stored.startsWith(r'$2b$') ||
+              stored.startsWith(r'$2y$'));
+
+      bool matched;
+      if (isBcryptHash) {
+        // Format hash sama dengan yang disimpan saat register/edit user.
+        final verify = await conn.execute(
+          Sql.named(
+            'SELECT crypt(@password, @storedHash) = @storedHash',
+          ),
+          parameters: {'password': password, 'storedHash': stored},
+        );
+        matched = (verify.first[0] as bool?) ?? false;
+      } else {
+        // Legacy plain text: bandingkan langsung, lalu upgrade ke bcrypt
+        // supaya login berikutnya sudah memakai hash.
+        matched = stored == password;
+        if (matched) {
+          try {
+            await conn.execute(
+              Sql.named(
+                "UPDATE users SET password = crypt(@newPassword, gen_salt('bf')) WHERE id = @id",
+              ),
+              parameters: {'newPassword': password, 'id': row[0]},
+            );
+          } catch (_) {
+            // Gagal upgrade (mis. offline) — login tetap sukses,
+            // akan di-upgrade ulang pada login berikutnya.
+          }
+        }
       }
-      return null;
+
+      if (!matched) return null;
+
+      _currentUser = {
+        'id': row[0],
+        'name': row[1],
+        'email': row[2],
+        'role': row[3],
+        'phone': row[4]?.toString() ?? '',
+        'profile_image': row[5]?.toString(),
+        'profile_image_data': _toBytes(row[6]),
+      };
+      profileImageVersion.value++;
+      return _currentUser;
     } catch (e) {
       debugPrint('Error autentikasi database: $e');
       rethrow;
@@ -210,7 +248,7 @@ class DatabaseService {
       final conn = await connect();
       await conn.execute(
         Sql.named(
-          'INSERT INTO users (name, email, password, phone, role) VALUES (@name, @email, @password, @phone, @role)',
+          "INSERT INTO users (name, email, password, phone, role) VALUES (@name, @email, crypt(@password, gen_salt('bf')), @phone, @role)",
         ),
         parameters: {
           'name': name,
@@ -307,7 +345,7 @@ class DatabaseService {
       final conn = await connect();
       await conn.execute(
         Sql.named(
-          'UPDATE users SET password = @newPassword WHERE id = @userId',
+          "UPDATE users SET password = crypt(@newPassword, gen_salt('bf')) WHERE id = @userId",
         ),
         parameters: {'newPassword': newPassword, 'userId': userId},
       );

@@ -1138,8 +1138,8 @@ class _ProfileScreenState extends State<ProfileScreen>
     // User biasa: tampilkan role non-admin saja. Admin: tampilkan semua tapi kunci field.
     final isAdmin = _roleController.text.toLowerCase() == 'admin';
     final availableRoles = isAdmin
-        ? const ['Employee', 'Manager', 'Admin', 'HR']
-        : const ['Employee', 'Manager', 'HR'];
+        ? const ['Employee', 'Manajer', 'Admin', 'HR']
+        : const ['Employee', 'Manajer', 'HR'];
     final current = availableRoles.contains(_roleController.text)
         ? _roleController.text
         : 'Employee';

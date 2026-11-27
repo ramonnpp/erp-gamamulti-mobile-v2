@@ -101,8 +101,7 @@ erp-gamamulti-mobile-v2/
 │   │   └── splash/             # Splash screen awal
 │   ├── widgets/                # Komponen UI reusable (snackbar, tombol ekspor)
 │   └── main.dart               # Entry point aplikasi
-├── DATABASE_SCHEMA.sql         # Skema tabel utama database
-├── ADMIN_DDL.sql               # Skema tabel & DDL khusus admin
+├── schema_only.sql             # Skema tabel utama database
 └── pubspec.yaml                # Daftar dependensi Flutter
 ```
 

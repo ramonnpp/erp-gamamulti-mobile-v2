@@ -43,9 +43,9 @@ final List<_RoleInfo> _roleInfos = [
     color: Color(0xFF7C3AED),
   ),
   const _RoleInfo(
-    key: 'manajemen',
-    label: 'Manajemen',
-    value: 'Manajemen',
+    key: 'manajer',
+    label: 'Manajer',
+    value: 'Manajer',
     subtitle: 'Jajaran manajemen',
     icon: Icons.business_center_rounded,
     color: Color(0xFF0369A1),
@@ -66,8 +66,11 @@ String _roleKey(dynamic role) {
   final r = (role?.toString() ?? '').trim().toLowerCase();
   if (r == 'admin') return 'admin';
   if (r == 'hr' || r == 'hrd') return 'hr';
-  if (r == 'manajemen' || r == 'management' || r == 'manager') {
-    return 'manajemen';
+  if (r == 'manajemen' ||
+      r == 'manajer' ||
+      r == 'management' ||
+      r == 'manager') {
+    return 'manajer';
   }
   return 'employee';
 }
@@ -668,7 +671,7 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
                                       ),
                                     )
                                   : Text(
-                                      isEdit ? 'Simpan Perubahan' : 'Simpan',
+                                      isEdit ? 'Simpan' : 'Simpan',
                                       style: const TextStyle(
                                         fontSize: 14,
                                         fontWeight: FontWeight.w800,
@@ -870,8 +873,8 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
           _statBadge('Admin', '${_countOf('admin')}', AppTheme.accentColor),
           _statBadge('HR', '${_countOf('hr')}', const Color(0xFFDDD6FE)),
           _statBadge(
-            'Manajemen',
-            '${_countOf('manajemen')}',
+            'Manajer',
+            '${_countOf('manajer')}',
             const Color(0xFFBAE6FD),
           ),
           _statBadge(
