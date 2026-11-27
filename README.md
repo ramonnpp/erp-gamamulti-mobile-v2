@@ -1,172 +1,157 @@
-Gama Multi ERP Mobile (erp-gamamulti-mobile-v2)
+# Gama Multi ERP Mobile v2
 
-Aplikasi mobile Enterprise Resource Planning (ERP) berbasis Flutter untuk manajemen operasional internal perusahaan Gama Multi Usaha Mandiri (GMUM), mencakup presensi kehadiran, pengajuan cuti dan izin sakit, pencatatan log aktivitas harian, pengumuman internal, serta panel manajemen administrator yang terhubung langsung ke database PostgreSQL (Supabase).
+![Flutter](https://img.shields.io/badge/Flutter-3.x-02569B?style=for-the-badge&logo=flutter&logoColor=white)
+![Dart](https://img.shields.io/badge/Dart-3.x-0175C2?style=for-the-badge&logo=dart&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15+-316192?style=for-the-badge&logo=postgresql&logoColor=white)
+![Supabase](https://img.shields.io/badge/Supabase-Database-3ECF8E?style=for-the-badge&logo=supabase&logoColor=white)
 
-Unduh & Instalasi Aplikasi (Android)
+Aplikasi mobile Enterprise Resource Planning (ERP) internal berbasis **Flutter** untuk manajemen operasional karyawan dan administrator **Gama Multi Usaha Mandiri (GMUM)**, terintegrasi langsung dengan database **PostgreSQL (Supabase)**.
 
-Link Alternatif: Klik di sini untuk mengunduh file .apk
+---
 
-Langkah Instalasi di Perangkat Android
+## 📱 Unduh & Instalasi Aplikasi (Android)
 
-Klik tombol Download APK atau tautan alternatif di atas untuk mengunduh file installer (app-release.apk).
+[![Download APK](https://img.shields.io/badge/Download-APK_Android_v2.0-3DDC84?style=for-the-badge&logo=android&logoColor=white)](GANTI_DENGAN_LINK_APK_KAMU_DI_SINI)
 
-Buka file .apk yang telah diunduh melalui File Manager atau notifikasi browser di HP Android Anda.
+> **Link Alternatif:** [Klik di sini untuk mengunduh file .apk](GANTI_DENGAN_LINK_APK_KAMU_DI_SINI)
 
-Jika muncul peringatan keamanan, pilih Setelan (Settings) lalu aktifkan izin Izinkan dari sumber ini (Install from Unknown Sources).
+### Cara Instalasi di Perangkat Android:
+1. Unduh file **`app-release.apk`** melalui tombol atau link di atas.
+2. Buka file `.apk` yang telah diunduh melalui *File Manager* atau notifikasi browser.
+3. Jika muncul peringatan keamanan, aktifkan izin **"Install from Unknown Sources"** (*Izinkan dari sumber ini*).
+4. Ketuk **Install** dan tunggu proses selesai.
 
-Tekan Instal dan tunggu hingga aplikasi siap digunakan.
+---
 
-Arsitektur Sistem
+## 🏗️ Arsitektur Sistem
 
-Aplikasi ini terhubung langsung dari klien Flutter ke database PostgreSQL yang di-hosting di Supabase melalui Supavisor Session Pooler dengan koneksi terenkripsi SSL (SslMode.require).
+Aplikasi ini menghubungkan lapisan layanan database Flutter (`database_service.dart` & `admin_database_service.dart`) langsung ke instance PostgreSQL **Supabase** melalui **Supavisor Session Pooler** dengan koneksi terenkripsi SSL.
 
+```mermaid
 flowchart LR
-    subgraph Mobile ["Aplikasi Flutter (Android / iOS)"]
-        UI["UI Views & Widgets"]
-        Auth["Autentikasi & Role Check"]
-        UserSvc["database_service.dart"]
-        AdminSvc["admin_database_service.dart"]
-        Env[".env (flutter_dotenv)"]
+    subgraph MobileApp ["📱 Flutter Mobile App (erp-gamamulti-mobile-v2)"]
+        UI_User["👤 User Screens\n(Absensi, Cuti, Log, Pengumuman)"]
+        UI_Admin["🛡️ Admin Screens\n(Manajemen User, Approval, Rekap)"]
+        SVC_User["database_service.dart"]
+        SVC_Admin["admin_database_service.dart"]
+        ENV[".env\n(flutter_dotenv)"]
     end
 
-    subgraph Cloud ["Supabase Cloud"]
+    subgraph SupabaseCloud ["☁️ Supabase Cloud"]
         Pooler["Supavisor Session Pooler\n(Port 5432 • IPv4 • SSL Required)"]
-        PG[("PostgreSQL Database\n(Skema public + RLS)")]
+        DB[("PostgreSQL Database\n(Users, Attendance, Leaves, Logs)")]
     end
 
-    UI --> Auth
-    Auth -->|Role: User| UserSvc
-    Auth -->|Role: Admin| AdminSvc
-    Env -.->|Kredensial DB| UserSvc
-    Env -.->|Kredensial DB| AdminSvc
-    UserSvc ==>|Direct SQL Query| Pooler
-    AdminSvc ==>|Direct SQL Query| Pooler
-    Pooler ==> PG
+    UI_User --> SVC_User
+    UI_Admin --> SVC_Admin
+    ENV -.->|Load Credentials| SVC_User
+    ENV -.->|Load Credentials| SVC_Admin
+    SVC_User -->|TCP + SSL| Pooler
+    SVC_Admin -->|TCP + SSL| Pooler
+    Pooler --> DB
+```
 
+---
 
-Fitur Utama
+## ✨ Fitur Utama
 
-Modul Karyawan (User)
+### 👤 Modul Karyawan (User)
+* **Autentikasi:** Registrasi akun baru dan login dengan verifikasi *password hash* (`bcrypt`).
+* **Presensi / Absensi:** Pencatatan kehadiran harian dan riwayat absensi lengkap.
+* **Manajemen Cuti & Izin Sakit:** Pengajuan cuti tahunan, pengajuan izin sakit beserta detail, serta pemantauan status persetujuan.
+* **Log Aktivitas Harian:** Pencatatan detail pekerjaan harian, penambahan log baru, dan riwayat aktivitas.
+* **Pengumuman Perusahaan:** Melihat informasi dan pengumuman terbaru dari manajemen.
+* **Profil & Ekspor Data:** Pengelolaan profil pengguna serta fitur ekspor laporan.
 
-Autentikasi & Profil: Login dan registrasi akun berbasis email dengan enkripsi password (bcrypt), serta manajemen profil pengguna.
+### 🛡️ Modul Administrator (Admin)
+* **Dashboard Admin:** Ringkasan aktivitas operasional dan monitoring data karyawan.
+* **Manajemen Pengguna:** Kelola data akun karyawan, hak akses (*role*), dan status aktif.
+* **Monitoring Absensi:** Rekapitulasi dan pemantauan kehadiran seluruh karyawan.
+* **Persetujuan Cuti & Izin:** Tinjau, setujui, atau tolak pengajuan cuti/sakit karyawan.
+* **Audit Log Aktivitas:** Pantau seluruh log aktivitas kerja karyawan.
+* **Manajemen Pengumuman:** Buat, ubah, dan publikasikan pengumuman internal.
+* **Ekspor Laporan Admin:** Unduh rekap data operasional untuk kebutuhan administrasi.
 
-Presensi / Absensi: Pencatatan kehadiran harian dan riwayat absensi lengkap.
+---
 
-Manajemen Cuti & Izin Sakit: Pengajuan cuti tahunan dan izin sakit melalui formulir terintegrasi, lengkap dengan rincian status dan riwayat pengajuan.
+## 📂 Struktur Direktori
 
-Log Aktivitas Harian: Pencatatan, penambahan, dan pemantauan laporan aktivitas kerja harian.
+```text
+erp-gamamulti-mobile-v2/
+├── lib/
+│   ├── announcements/          # Layar detail pengumuman
+│   ├── services/               # Koneksi PostgreSQL Supabase & layanan ekspor
+│   │   ├── database_service.dart
+│   │   ├── admin_database_service.dart
+│   │   ├── export_service.dart
+│   │   └── admin_export_service.dart
+│   ├── theme/                  # Konfigurasi tema dan warna aplikasi
+│   ├── views/
+│   │   ├── activity_log/       # Fitur catatan aktivitas harian
+│   │   ├── admin/              # Halaman khusus dashboard & manajemen admin
+│   │   ├── attendance/         # Fitur presensi & riwayat kehadiran
+│   │   ├── auth/               # Login, register, dan penanganan error koneksi
+│   │   ├── home/               # Beranda utama karyawan
+│   │   ├── leave/              # Pengajuan & riwayat cuti serta izin sakit
+│   │   ├── navigation/         # Navigasi utama aplikasi
+│   │   ├── profile/            # Halaman profil pengguna
+│   │   └── splash/             # Splash screen awal
+│   ├── widgets/                # Komponen UI reusable (snackbar, tombol ekspor)
+│   └── main.dart               # Entry point aplikasi
+├── DATABASE_SCHEMA.sql         # Skema tabel utama database
+├── ADMIN_DDL.sql               # Skema tabel & DDL khusus admin
+└── pubspec.yaml                # Daftar dependensi Flutter
+```
 
-Pengumuman Internal: Papan informasi dan detail pengumuman perusahaan.
+---
 
-Ekspor Data: Fitur ekspor laporan data pribadi.
+## 🚀 Cara Menjalankan Proyek (Mode Developer)
 
-Modul Administrator (Admin)
+### 1. Prasyarat
+* [Flutter SDK](https://docs.flutter.dev/get-started/install) (versi 3.x atau terbaru)
+* Dart SDK
+* Akun dan proyek aktif di [Supabase](https://supabase.com/)
 
-Dashboard Admin: Ringkasan dan navigasi terpusat untuk pengelolaan seluruh data operasional.
-
-Manajemen Pengguna: Pengelolaan data akun karyawan dan hak akses peran (Admin / User).
-
-Monitoring Absensi & Cuti: Peninjauan dan persetujuan data kehadiran serta pengajuan cuti/izin karyawan.
-
-Monitoring Log Aktivitas: Pemantauan laporan aktivitas kerja seluruh karyawan.
-
-Manajemen Pengumuman: Pembuatan dan pengelolaan pengumuman perusahaan.
-
-Ekspor Laporan Admin: Fitur ekspor rekapitulasi data operasional untuk kebutuhan administrasi.
-
-Teknologi & Arsitektur
-
-Framework Mobile: Flutter (Dart) — mendukung Android, iOS, Web, dan Desktop.
-
-Database: PostgreSQL (Hosted via Supabase).
-
-Koneksi Database: Koneksi PostgreSQL langsung melalui Session Pooler (SslMode.require) yang dikelola pada database_service.dart dan admin_database_service.dart.
-
-Manajemen Konfigurasi: flutter_dotenv untuk pengelolaan variabel lingkungan (.env).
-
-Prasyarat Instalasi (Pengembangan)
-
-Pastikan perangkat pengembangan Anda telah terinstal:
-
-Flutter SDK (versi stabil terbaru)
-
-Dart SDK (termasuk dalam Flutter SDK)
-
-Android Studio / VS Code dengan ekstensi Flutter & Dart
-
-Akun dan proyek aktif di Supabase
-
-Cara Menjalankan Proyek (Mode Developer)
-
-1. Clone Repositori
-
+### 2. Clone Repositori
+```bash
 git clone https://github.com/ramonnpp/erp-gamamulti-mobile-v2.git
 cd erp-gamamulti-mobile-v2
+```
 
+### 3. Persiapan Database di Supabase
+1. Buat proyek baru di dashboard Supabase.
+2. Aktifkan ekstensi `pgcrypto` melalui menu **Database > Extensions**.
+3. Jalankan skrip `DATABASE_SCHEMA.sql` dan `ADMIN_DDL.sql` di **SQL Editor** Supabase untuk membentuk seluruh struktur tabel.
+4. Aktifkan **Row Level Security (RLS)** pada tabel sensitif (seperti `users`) untuk mencegah akses tidak sah dari REST API publik.
 
-2. Instal Dependensi
+### 4. Konfigurasi Environment (`.env`)
+Buat file `.env` di direktori *root* proyek dan isi menggunakan kredensial **Session Pooler** dari dashboard Supabase:
 
-flutter pub get
-
-
-3. Konfigurasi Database & Environment (.env)
-
-Buat file .env pada direktori utama (root) proyek (file ini sudah diabaikan oleh .gitignore agar kredensial tetap aman), lalu isi dengan kredensial Session Pooler dari dashboard Supabase Anda:
-
+```env
 DB_HOST=aws-0-ap-southeast-1.pooler.supabase.com
 DB_PORT=5432
 DB_NAME=postgres
 DB_USER=postgres.[project-ref]
 DB_PASSWORD=password_database_supabase_anda
+```
 
-
-(Sesuaikan nama variabel di atas dengan kunci yang digunakan di file .env / database_service.dart proyek Anda).
-
-4. Persiapan Skema Database (Jika Setup Baru)
-
-Jika Anda menyiapkan proyek Supabase baru dari awal:
-
-Aktifkan ekstensi pgcrypto melalui Database > Extensions di dashboard Supabase.
-
-Jalankan skrip skema SQL (DATABASE_SCHEMA.sql / ADMIN_DDL.sql) pada SQL Editor Supabase.
-
-Aktifkan Row Level Security (RLS) pada tabel-tabel di skema public untuk menjaga keamanan API publik.
-
-5. Jalankan & Build Aplikasi
-
-Menjalankan di emulator / perangkat debug:
-
+### 5. Instalasi Dependensi & Menjalankan Aplikasi
+```bash
+flutter pub get
 flutter run
+```
 
-
-Membuat file APK rilis (app-release.apk):
-
+### 6. Build APK Release
+```bash
 flutter build apk --release
+```
+File APK siap instal akan tersimpan di `build/app/outputs/flutter-apk/app-release.apk`.
 
+---
 
-Struktur Direktori Utama
+## 🔒 Catatan Keamanan
 
-lib/
-├── announcements/         # Layar detail pengumuman
-├── services/              # Layanan koneksi PostgreSQL (User & Admin) dan ekspor data
-├── theme/                 # Konfigurasi tema dan gaya tampilan aplikasi
-├── views/
-│   ├── activity_log/      # Tampilan daftar, detail, dan form log aktivitas
-│   ├── admin/             # Seluruh layar pengelolaan khusus Admin
-│   ├── attendance/        # Layar absensi dan riwayat kehadiran
-│   ├── auth/              # Layar login, registrasi, dan penanganan gagal koneksi
-│   ├── home/              # Beranda utama karyawan
-│   ├── leave/             # Pengajuan dan riwayat cuti serta izin sakit
-│   ├── navigation/        # Navigasi utama aplikasi
-│   ├── profile/           # Halaman profil pengguna
-│   └── splash/            # Layar pembuka (Splash Screen)
-└── widgets/               # Komponen UI reusable (snackbar, tombol ekspor, dll.)
-
-
-Catatan Keamanan
-
-Jangan pernah meng-commit file .env ke repositori Git publik maupun privat.
-
-Pastikan Row Level Security (RLS) selalu aktif pada tabel-tabel di Supabase agar akses melalui kunci publik REST API tetap terkunci.
-
-Ganti placeholder GANTI_DENGAN_LINK_APK_KAMU_DI_SINI pada bagian unduhan dengan tautan file .apk resmi milik internal perusahaan sebelum membagikan repositori.
+* **Kerahasiaan `.env`:** File `.env` menyimpan kredensial koneksi database utama dan sudah didaftarkan di dalam `.gitignore`. **Jangan pernah** meng-commit atau mengunggah file `.env` ke repositori publik.
+* **Koneksi SSL Wajib:** Seluruh komunikasi antara aplikasi Flutter dan Supavisor Session Pooler Supabase wajib menggunakan enkripsi SSL (`SslMode.require`).
+* **Perlindungan Row Level Security (RLS):** Pastikan fitur RLS selalu aktif di seluruh tabel skema `public` pada Supabase agar tabel dan *hash* password pengguna tidak dapat diakses melalui REST API publik (`anon` key).
+* **Distribusi Internal:** Karena aplikasi terhubung langsung ke database PostgreSQL internal, distribusikan file `.apk` hanya kepada karyawan resmi perusahaan.
