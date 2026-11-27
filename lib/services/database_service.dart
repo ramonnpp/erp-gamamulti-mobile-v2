@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:postgres/postgres.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class DatabaseService {
   static final DatabaseService _instance = DatabaseService._internal();
@@ -41,14 +42,11 @@ class DatabaseService {
 
   // Konfigurasi koneksi PostgreSQL ERP
   // Sesuaikan host, port, database name, username, dan password dengan server Anda.
-  // final String _host = '192.168.18.80';
-  // final String _host = '192.168.50.13';
-  final String _host = '192.168.100.43';
-  // final String _host = '10.10.10';
-  final int _port = 5432;
-  final String _databaseName = 'gama_multi_erp';
-  final String _username = 'postgres';
-  final String _password = 'ramonganteng';
+  late final String _host = dotenv.env['POSTGRES_HOST']!;
+  late final int _port = int.parse(dotenv.env['POSTGRES_PORT']!);
+  late final String _databaseName = dotenv.env['POSTGRES_DB']!;
+  late final String _username = dotenv.env['POSTGRES_USER']!;
+  late final String _password = dotenv.env['POSTGRES_PASSWORD']!;
 
   Future<Connection> connect() async {
     if (_connection != null && _connection!.isOpen) {
@@ -66,7 +64,7 @@ class DatabaseService {
 
       _connection = await Connection.open(
         endpoint,
-        settings: const ConnectionSettings(sslMode: SslMode.disable),
+        settings: ConnectionSettings(sslMode: SslMode.require),
       );
       debugPrint('Berhasil terhubung ke PostgreSQL ERP Database.');
       return _connection!;

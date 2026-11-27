@@ -43,6 +43,7 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+.env
 
 .claude/
 graphify-out/
@@ -52,3 +53,5 @@ backup_erp.sql
 DATABASE_SCHEMA.sql
 temp_analysis.txt
 *.md
+ADMIN_DDL.sql
+DATABASE_SCHEMA.sql
