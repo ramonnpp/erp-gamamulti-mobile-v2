@@ -11,9 +11,9 @@ Aplikasi mobile Enterprise Resource Planning (ERP) internal berbasis **Flutter**
 
 ## 📱 Unduh & Instalasi Aplikasi (Android)
 
-[![Download APK](https://img.shields.io/badge/Download-APK_Android_v2.0-3DDC84?style=for-the-badge&logo=android&logoColor=white)](GANTI_DENGAN_LINK_APK_KAMU_DI_SINI)
+[![Download APK](https://img.shields.io/badge/Download-APK_Android_v2.0-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://drive.google.com/uc?export=download&id=1IjqyEAgGL_l0kB-zRH2atJOt4tLWlQYb)
 
-> **Link Alternatif:** [Klik di sini untuk mengunduh file .apk](GANTI_DENGAN_LINK_APK_KAMU_DI_SINI)
+> **Link Alternatif:** [Klik di sini untuk mengunduh file .apk](https://drive.google.com/file/d/1IjqyEAgGL_l0kB-zRH2atJOt4tLWlQYb/view?usp=sharing)
 
 ### Cara Instalasi di Perangkat Android:
 
